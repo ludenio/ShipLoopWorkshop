@@ -52,11 +52,17 @@ h2 { font-size:22px; font-weight:500; margin:8px 0 20px; }
 :root[data-theme="light"] .board-scroll { background-image:linear-gradient(#dce1ec 1px,transparent 1px),linear-gradient(90deg,#dce1ec 1px,transparent 1px); }
 #board { position:relative; width:1500px; min-height:760px; padding:16px; }
 #nodes { position:absolute; inset:0; width:100%; min-height:728px; }
-.node { position:absolute; z-index:2; width:204px; min-height:128px; background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--color); border-radius:4px; padding:11px 12px; cursor:grab; touch-action:none; box-shadow:0 4px 12px #0002; }
+.node { position:absolute; z-index:2; width:204px; min-height:128px; background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--color); border-radius:4px; padding:11px 12px; cursor:grab; touch-action:none; user-select:none; box-shadow:0 4px 12px #0002; }
 .node:hover { border-color:var(--color); box-shadow:0 5px 18px #0004; }
 .node.selected { outline:2px solid var(--accent); }
 .node[data-category="data"] { border-style:dashed; }
-.card-type { display:flex; justify-content:space-between; color:var(--color); }
+.card-type { display:flex; align-items:center; justify-content:space-between; color:var(--color); cursor:grab; }
+.card-type:active { cursor:grabbing; }
+.node-port { display:grid; place-items:center; width:18px; height:18px; padding:0; border:1px solid var(--color); border-radius:50%; background:var(--panel); color:var(--color); font-size:9px; line-height:1; }
+.node-port:hover { background:var(--color); color:var(--bg); }
+.input-port { position:absolute; left:-9px; top:calc(50% - 9px); pointer-events:none; }
+.output-port { flex:0 0 18px; }
+.node-hint { align-self:center; color:var(--muted); font:9px ui-monospace,monospace; letter-spacing:.3px; opacity:.7; }
 .card h3 { font-size:16px; font-weight:500; line-height:1.35; margin:8px 0; }
 .card p { font-size:13px; color:var(--muted); margin:0; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
 .card-bottom { display:flex; justify-content:flex-end; margin-top:8px; }
@@ -69,6 +75,9 @@ h2 { font-size:22px; font-weight:500; margin:8px 0 20px; }
 #arrows #data-arrow path { fill:var(--data); }
 #arrows .edge-label rect { fill:var(--panel); stroke:var(--line); }
 #arrows .edge-label text { fill:var(--text); }
+#arrows .edge-hit { pointer-events:stroke; stroke:transparent !important; }
+#arrows .edge-spline { transition:stroke-width .15s ease,filter .15s ease; }
+#arrows .edge-hit:hover + .edge-spline { filter:drop-shadow(0 0 4px currentColor); }
 footer { padding:16px 0 0; font-size:12px; color:var(--muted); }
 dialog { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; width:min(560px,calc(100vw - 30px)); padding:24px; box-shadow:0 24px 100px #0008; }
 dialog::backdrop { background:#05070caa; }

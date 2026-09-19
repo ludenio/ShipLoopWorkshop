@@ -28,7 +28,6 @@ let history = [];
 let connecting = false;
 let source = null;
 let pendingEdge = null;
-let dragId = null;
 let dragMoved = false;
 
 try {
@@ -69,7 +68,7 @@ function palette(typesToShow) {
 }
 function nodeMarkup(card) {
   const type = types[card.type];
-  return `<article class="node card ${source === card.id ? 'selected' : ''}" tabindex="0" role="button" aria-label="Edit ${escape(card.title)}" draggable="true" data-id="${card.id}" data-category="${categoryFor(card)}" style="left:${card.x}px;top:${card.y}px;${cssTheme(card.type)}"><div class="card-type"><span>${type.icon} ${type.label}</span><span>⠿</span></div><h3>${escape(card.title)}</h3><p>${escape(card.body)}</p><div class="card-bottom"><button data-link="${card.id}" aria-label="Connect ${escape(card.title)}">⊕</button></div></article>`;
+  return `<article class="node card ${source === card.id ? 'selected' : ''}" tabindex="0" role="button" aria-label="Edit ${escape(card.title)}" data-id="${card.id}" data-category="${categoryFor(card)}" style="left:${card.x}px;top:${card.y}px;${cssTheme(card.type)}"><div class="card-type node-drag-handle"><span>${type.icon} ${type.label}</span><button class="node-port output-port" data-link="${card.id}" aria-label="Start connection from ${escape(card.title)}" title="Start connection">●</button></div><h3>${escape(card.title)}</h3><p>${escape(card.body)}</p><div class="card-bottom"><span class="node-hint">DRAG TO MOVE</span><button data-link="${card.id}" aria-label="Connect ${escape(card.title)}">⊕</button></div><span class="node-port input-port" aria-hidden="true">●</span></article>`;
 }
 function render() {
   save();
@@ -113,7 +112,8 @@ function drawEdges() {
     const lx = (sx + tx) / 2;
     const ly = (sy + ty) / 2 + (index % 2 ? 13 : -9);
     const width = Math.max(34, (edge.label || '').length * 5.8 + 14);
-    result += `<path d="${path}" fill="none" stroke-width="${data ? 1.5 : 2}" ${data ? 'stroke-dasharray="5 5"' : ''} marker-end="url(#${data ? 'data' : 'exec'}-arrow)"/>`;
+    result += `<path class="edge-hit" data-edge="${edge.id}" d="${path}" fill="none" stroke="transparent" stroke-width="18" pointer-events="stroke"/>`;
+    result += `<path class="edge-spline ${data ? 'data-spline' : 'execution-spline'}" d="${path}" fill="none" stroke-width="${data ? 2 : 2.5}" stroke-linecap="round" ${data ? 'stroke-dasharray="6 5"' : ''} marker-end="url(#${data ? 'data' : 'exec'}-arrow)"/>`;
     if (edge.label) result += `<g class="edge-label" data-edge="${edge.id}" role="button" tabindex="0" aria-label="Edit connection ${escape(edge.label)}"><rect x="${lx - width / 2}" y="${ly - 9}" width="${width}" height="18" rx="4"/><text x="${lx}" y="${ly + 3}" text-anchor="middle" font-size="10">${escape(edge.label)}</text></g>`;
   });
   svg.innerHTML = result;
@@ -178,26 +178,11 @@ $('#undo').onclick = () => { if (!history.length) return; state = JSON.parse(his
 $('#reset').onclick = () => $('#reset-dialog').showModal();
 $('#confirm-reset').onclick = () => { checkpoint(); state = { cards: [], edges: [], stage: 0 }; connecting = false; source = null; $('#reset-dialog').close(); render(); };
 
-document.addEventListener('dragstart', (event) => { const node = event.target.closest('.node'); if (!node) return; dragId = node.dataset.id; dragMoved = false; event.dataTransfer.setData('text/plain', dragId); event.dataTransfer.effectAllowed = 'move'; });
-document.addEventListener('dragover', (event) => { if (dragId && event.target.closest('#board')) event.preventDefault(); });
-document.addEventListener('drop', (event) => {
-  const board = event.target.closest('#board');
-  if (!board || !dragId) return;
-  event.preventDefault();
-  const scroll = board.parentElement;
-  const rect = board.getBoundingClientRect();
-  const card = state.cards.find((item) => item.id === dragId);
-  if (!card) return;
-  checkpoint();
-  card.x = Math.max(16, Math.min(board.offsetWidth - 225, event.clientX - rect.left + scroll.scrollLeft - 102));
-  card.y = Math.max(16, Math.min(board.offsetHeight - 150, event.clientY - rect.top + scroll.scrollTop - 64));
-  dragMoved = true; dragId = null; render();
-});
-document.addEventListener('dragend', () => { dragId = null; });
 let pointerDrag = null;
 document.addEventListener('pointerdown', (event) => {
   const node = event.target.closest('.node');
   if (!node || event.target.closest('button')) return;
+  event.preventDefault();
   const card = state.cards.find((item) => item.id === node.dataset.id);
   if (!card) return;
   pointerDrag = { node, card, startX: event.clientX, startY: event.clientY, originX: card.x, originY: card.y, moved: false };
@@ -209,6 +194,7 @@ document.addEventListener('pointermove', (event) => {
   const dy = event.clientY - pointerDrag.startY;
   if (!pointerDrag.moved && Math.hypot(dx, dy) < 4) return;
   if (!pointerDrag.moved) { checkpoint(); pointerDrag.moved = true; }
+  event.preventDefault();
   pointerDrag.card.x = Math.max(16, Math.min(1270, pointerDrag.originX + dx));
   pointerDrag.card.y = Math.max(16, Math.min(650, pointerDrag.originY + dy));
   pointerDrag.node.style.left = `${pointerDrag.card.x}px`;
@@ -220,6 +206,7 @@ document.addEventListener('pointerup', () => {
   if (pointerDrag.moved) { dragMoved = true; render(); }
   pointerDrag = null;
 });
+document.addEventListener('pointercancel', () => { pointerDrag = null; });
 
 function card(id, title, type, x, y, body, category) { if (!state.cards.some((item) => item.id === id)) state.cards.push({ id, title, type, x, y, body, category: category || types[type].category }); }
 function edge(from, to, label = 'Next', kind = 'execution') { if (state.cards.some((cardItem) => cardItem.id === from) && state.cards.some((cardItem) => cardItem.id === to) && !state.edges.some((item) => item.from === from && item.to === to)) state.edges.push({ id: uid(), from, to, label, kind }); }
