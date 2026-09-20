@@ -359,21 +359,22 @@ footer.site {
   flex-shrink: 0;
 }
 .footer-logos { display: flex; align-items: center; gap: 18px; }
-.footer-luden-link, .footer-github-link {
+.footer-mascot-link, .footer-luden-link, .footer-github-link {
   display: inline-flex;
   opacity: 0.82;
   transition: opacity var(--dur) var(--ease), transform 0.25s ease;
 }
-.footer-luden-link:hover, .footer-github-link:hover {
+.footer-mascot-link:hover, .footer-luden-link:hover, .footer-github-link:hover {
   opacity: 1;
   transform: translateY(-2px);
 }
+.footer-mascot { width: 28px; height: auto; filter: drop-shadow(0 8px 18px rgba(137, 178, 68, 0.28)); }
 .footer-luden-logo { display: block; height: 22px; width: auto; }
 .footer-github-logo { display: block; height: 18px; width: auto; }
 :root[data-theme="light"] .footer-luden-logo,
 :root[data-theme="light"] .footer-github-logo { filter: invert(1); }
 @media (prefers-reduced-motion: reduce) {
-  .footer-luden-link:hover, .footer-github-link:hover { transform: none; }
+  .footer-mascot-link:hover, .footer-luden-link:hover, .footer-github-link:hover { transform: none; }
 }
 
 dialog {
