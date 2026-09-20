@@ -1,0 +1,14 @@
+{
+  "name": "Ship Loop Workshop",
+  "short_name": "Ship Loop",
+  "description": "Grow a simple agent ask into a reliable, production-ready ship loop.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#14120b",
+  "theme_color": "#14120b",
+  "icons": [
+    { "src": "favicon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "apple-touch-icon.png", "type": "image/png", "sizes": "180x180" }
+  ]
+}
