@@ -29,12 +29,12 @@ const stages = [
   ['Start with an empty board', 'Begin with the smallest system that could work. We will grow it together.', 'Give the task to an agent →'],
   ['The task goes to an agent', '0–8 min · A task, and an agent told to complete it. That is the whole system.', 'Put a person in the loop →'],
   ['A person asks through a terminal', '8–16 min · Someone takes the task and types the ask. The agent no longer receives the task by itself.', 'Start it without typing →'],
-  ['The ask can start itself', '16–24 min · The same work begins when the task is there. A person does not have to type it in.', 'Add implement and cleanup →'],
-  ['Implementation, then a fresh cleanup', '24–32 min · One writable turn, a local commit, then a new agent amends and pushes.', 'Add review, tests, ready →'],
-  ['Review, tests, and ready', '32–42 min · Cleanup already pushed. Review and tests judge that commit, then the PR is marked ready.', 'Add the attempt loop →'],
-  ['Rejection is feedback', '42–50 min · A P0/P1 or a test failure rejects the attempt. Problems return to implement.', 'Add implement stops →'],
-  ['Stops from implement', '50–55 min · A question is needinfo. Giving up or changing nothing closes an empty PR.', 'Add the attempt budget →'],
-  ['Three attempts, then a draft', '55–60 min · Another attempt needs tries and 75 minutes left. Otherwise the PR stays a draft.', 'Workshop complete ✓'],
+  ['The ask can start itself', '16–24 min · The same work begins when the task is there. A person does not have to type it in.', 'Split do and clean up →'],
+  ['Do the work, then clean it up', '24–32 min · One writable turn and a local commit. A fresh agent cleans that commit and pushes.', 'Judge the result →'],
+  ['Review, tests, and a person', '32–42 min · Another read of the pushed commit. Tests run. Then a person can take it.', 'Send problems back →'],
+  ['Rejection is feedback', '42–50 min · A bad review or a failing test is not the end. The problems return to the same work.', 'Allow the work to stop →'],
+  ['The work can also stop', '50–55 min · A question waits for a person. Giving up or changing nothing ends the run.', 'Bound the retries →'],
+  ['A few tries, then leave a draft', '55–60 min · Another attempt needs tries and time left. Otherwise the change stays a draft.', 'Workshop complete ✓'],
 ];
 const starterPositions = [[60, 70], [320, 70], [580, 70], [840, 70], [1100, 70], [1360, 70]];
 const MIN_ZOOM = 0.15;
@@ -269,6 +269,10 @@ function migrateWorkshop() {
       state.view = defaultView();
     }
     state.workshopV7 = true;
+  }
+  if (!state.workshopV8) {
+    if (state.stage > 3 && !state.cards.some((item) => item.id === 'simplify')) state.stage = 3;
+    state.workshopV8 = true;
   }
 }
 function normalizeState() {
@@ -771,7 +775,7 @@ $('#edge-form').onsubmit = (event) => { event.preventDefault(); checkpoint(); co
 $('#delete-edge').onclick = () => { if (!pendingEdge) return; checkpoint(); state.edges = state.edges.filter((item) => item.id !== pendingEdge.id); $('#edge-editor').close(); render(); };
 $('#undo').onclick = () => { if (!history.length) return; const previous = JSON.parse(history.pop()); state.cards = previous.cards; state.edges = previous.edges; state.stage = previous.stage; linkDrag = null; clearHighlights(); render(); };
 $('#reset').onclick = () => $('#reset-dialog').showModal();
-$('#confirm-reset').onclick = () => { checkpoint(); state = { cards: [], edges: [], stage: 0, view: defaultView(), workshopV3: true, workshopV4: true, workshopV5: true, workshopV6: true, workshopV7: true }; linkDrag = null; clearHighlights(); $('#reset-dialog').close(); applyView(); render(); };
+$('#confirm-reset').onclick = () => { checkpoint(); state = { cards: [], edges: [], stage: 0, view: defaultView(), workshopV3: true, workshopV4: true, workshopV5: true, workshopV6: true, workshopV7: true, workshopV8: true }; linkDrag = null; clearHighlights(); $('#reset-dialog').close(); applyView(); render(); };
 $('#zoom-in').onclick = () => zoomBy(1.2);
 $('#zoom-out').onclick = () => zoomBy(1 / 1.2);
 $('#zoom-reset').onclick = () => { const center = viewportCenter(); zoomAt(center.x, center.y, 1); };
@@ -1021,6 +1025,121 @@ $('#next').onclick = () => {
       unlink('task', 'person');
       edge('start', 'agent', '', 'execution', 'exec', 'exec');
       edge('task', 'agent', '', 'variable', 'task', 'task');
+      break;
+    case 4:
+      moveCard('person', 50, 560);
+      moveCard('terminal', 340, 560);
+      setCardText('agent', 'Implementation', 'One writable turn. Leaves a local commit and does not inspect the diff.');
+      addNodePin('agent', 'out', { id: 'committed', kind: 'exec', name: 'Committed' });
+      addNodePin('agent', 'out', { id: 'commit', kind: 'data', name: 'Local commit', dataType: 'context' });
+      card('simplify', 'Clean up and simplify', 'agent', 1020, 80, 'A fresh agent. No memory of the last turn. Amends the same commit and pushes.', 'execution', {
+        inputs: [
+          { id: 'exec', kind: 'exec', name: '' },
+          { id: 'commit', kind: 'data', name: 'Local commit', dataType: 'context' },
+        ],
+        outputs: [
+          { id: 'exec', kind: 'exec', name: 'Pushed' },
+          { id: 'pushed', kind: 'data', name: 'Pushed commit', dataType: 'context' },
+        ],
+      });
+      card('commit', 'Local commit', 'context', 680, 280, 'The attempt’s commit. Cleanup amends this.');
+      card('pushed', 'Pushed commit', 'context', 1020, 280, 'What review and tests will judge.');
+      edge('agent', 'simplify', 'Committed', 'execution', 'committed', 'exec');
+      edge('agent', 'commit', '', 'variable', 'commit', 'value');
+      edge('commit', 'simplify', '', 'variable', 'value-out', 'commit');
+      edge('simplify', 'pushed', '', 'variable', 'pushed', 'value');
+      break;
+    case 5:
+      card('reviewer', 'Code review', 'agent', 1360, 80, 'A fresh read of the pushed commit.', 'execution', {
+        inputs: [
+          { id: 'exec', kind: 'exec', name: '' },
+          { id: 'commit', kind: 'data', name: 'Pushed commit', dataType: 'context' },
+        ],
+        outputs: [
+          { id: 'clear', kind: 'exec', name: 'Clear' },
+          { id: 'reject', kind: 'exec', name: 'Rejected' },
+          { id: 'findings', kind: 'data', name: 'Findings', dataType: 'feedback' },
+        ],
+      });
+      card('tests', 'Run tests after the change', 'agent', 1700, 80, 'The suite with and without the change. A failure rejects the attempt.', 'execution', {
+        inputs: [
+          { id: 'exec', kind: 'exec', name: '' },
+          { id: 'commit', kind: 'data', name: 'Pushed commit', dataType: 'context' },
+        ],
+        outputs: [
+          { id: 'passed', kind: 'exec', name: 'Passed' },
+          { id: 'failed', kind: 'exec', name: 'Failed' },
+          { id: 'report', kind: 'data', name: 'Failure report', dataType: 'feedback' },
+        ],
+      });
+      card('ready', 'Mark it ready', 'agent', 2040, 80, 'Tests passed. A person can take it.', 'execution', {
+        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
+        outputs: [{ id: 'exec', kind: 'exec', name: '' }],
+      });
+      card('human', 'Review and merge', 'human', 2380, 80, 'A person reads the final diff and evidence, then merges.', 'execution', {
+        inputs: [
+          { id: 'exec', kind: 'exec', name: '' },
+          { id: 'draft', kind: 'data', name: 'Draft change', dataType: 'context' },
+        ],
+        outputs: [],
+      });
+      card('draft', 'Draft change', 'context', 2040, 280, 'Stays a draft until it is ready.');
+      edge('simplify', 'reviewer', 'Pushed', 'execution', 'exec', 'exec');
+      edge('pushed', 'reviewer', '', 'variable', 'value-out', 'commit');
+      edge('pushed', 'tests', '', 'variable', 'value-out', 'commit');
+      edge('reviewer', 'tests', 'Clear', 'execution', 'clear', 'exec');
+      edge('tests', 'ready', 'Passed', 'execution', 'passed', 'exec');
+      edge('ready', 'human', 'Ready', 'execution', 'exec', 'exec');
+      edge('draft', 'human', '', 'variable', 'value-out', 'draft');
+      break;
+    case 6:
+      card('feedback', 'Problems', 'feedback', 1360, 280, 'Findings and failures go into the next attempt.', 'data', {
+        inputs: [
+          { id: 'findings', kind: 'data', name: 'Findings', dataType: 'feedback' },
+          { id: 'report', kind: 'data', name: 'Failure report', dataType: 'feedback' },
+        ],
+        outputs: [{ id: 'value-out', kind: 'data', name: 'Problems', dataType: 'feedback' }],
+      });
+      addNodePin('agent', 'in', { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' });
+      addNodePin('agent', 'in', { id: 'retry', kind: 'exec', name: 'Again' });
+      edge('reviewer', 'feedback', '', 'variable', 'findings', 'findings');
+      edge('tests', 'feedback', '', 'variable', 'report', 'report');
+      edge('feedback', 'agent', '', 'variable', 'value-out', 'problems');
+      edge('reviewer', 'agent', 'Rejected', 'execution', 'reject', 'retry');
+      edge('tests', 'agent', 'Rejected', 'execution', 'failed', 'retry');
+      break;
+    case 7:
+      addNodePin('agent', 'out', { id: 'needinfo', kind: 'exec', name: 'Questions' });
+      addNodePin('agent', 'out', { id: 'empty', kind: 'exec', name: 'Empty' });
+      card('questions', 'Stop: questions', 'human', 680, 480, 'The run stops. Questions stay with the task.', 'execution', {
+        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
+        outputs: [],
+      });
+      card('empty', 'Stop: nothing shipped', 'agent', 1020, 480, 'The agent gave up or changed nothing.', 'execution', {
+        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
+        outputs: [],
+      });
+      edge('agent', 'questions', 'Questions', 'execution', 'needinfo', 'exec');
+      edge('agent', 'empty', 'Gave up', 'execution', 'empty', 'exec');
+      break;
+    case 8:
+      card('budget', 'Tries and time left?', 'agent', 1700, 280, 'A few attempts. Another try also needs time left.', 'execution', {
+        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
+        outputs: [
+          { id: 'yes', kind: 'exec', name: 'Yes' },
+          { id: 'no', kind: 'exec', name: 'No' },
+        ],
+      });
+      card('leftover', 'Stop: leave the draft', 'agent', 1700, 480, 'No attempt left. The last commit stays a draft.', 'execution', {
+        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
+        outputs: [],
+      });
+      unlink('reviewer', 'agent');
+      unlink('tests', 'agent');
+      edge('reviewer', 'budget', 'Rejected', 'execution', 'reject', 'exec');
+      edge('tests', 'budget', 'Rejected', 'execution', 'failed', 'exec');
+      edge('budget', 'agent', 'Try again', 'execution', 'yes', 'retry');
+      edge('budget', 'leftover', 'No', 'execution', 'no', 'exec');
       break;
   }
   render();
