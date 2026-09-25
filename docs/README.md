@@ -2,6 +2,8 @@
 
 Reference for the workshop's guided software-delivery example. Other company and scenario templates use the shared, general-purpose block library and do not need this exact pipeline. The interactive board does not start here.
 
+> **Everything lives in one repository.** The project's source code and the implementation system's workflow configuration are stored together. That is why the Doctor can fix the implementation system itself: its task goes through the same loop, the same way the system handles project tasks, with no separate pipeline or repository involved.
+
 The workshop steps are a simplified, editable model. For example, they initially record a failing baseline and continue; the current Nikolai reference below stops on a failing baseline. Exports preserve the participant's actual board, including such choices, rather than replacing it with this reference.
 
 An agent implements a task, cleans up, reviews, and tests in a bounded loop, then marks a pull request ready for a person to merge. This reference follows **Nikolai 32**, reviewed at commit `908bfe961` (22 September 2026) in `r7defoldclient`; its implementation is in `tools/nikolai/` and its detailed guide is `docs/development/issue-automation.md`.

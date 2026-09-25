@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const { presets } = require('../docs/blocks.js');
 const { build } = require('../docs/export.js');
 
-const types = { trigger: 'flow', agent: 'flow', context: 'data', feedback: 'data', task: 'data' };
+const types = { trigger: 'flow', agent: 'flow', human: 'flow', context: 'data', task: 'data' };
 const byId = Object.fromEntries(presets.map((preset) => [preset.id, preset]));
 const board = (cards, edges = []) => ({ cards, edges, stage: 0, view: { x: 48, y: 48, zoom: 1 } });
 const node = (presetId, id = presetId, changes = {}) => {
@@ -28,7 +28,8 @@ function assertCompatibleGraph(state) {
   }
 }
 
-test('catalog has only agent, trigger, and variable blocks with valid execution and data contracts', () => {
+test('catalog has only agent, trigger, human, task, and context blocks with valid execution and data contracts', () => {
+  assert.deepEqual(presets.map((preset) => preset.title), ['Start on an event', 'Agent', 'Human', 'Task', 'Context']);
   assert.equal(new Set(presets.map((preset) => preset.id)).size, presets.length);
   assert.deepEqual(new Set(presets.map((preset) => preset.type)), new Set(Object.keys(types)));
   for (const preset of presets) {
@@ -51,7 +52,7 @@ test('catalog has only agent, trigger, and variable blocks with valid execution 
     if (preset.group === 'data') {
       assert.ok(preset.pins.inputs.length && preset.pins.outputs.length, preset.id);
     } else {
-      if (preset.type === 'agent') assert.ok(preset.pins.inputs.some((pin) => pin.kind === 'exec'), preset.id);
+      if (preset.type !== 'trigger') assert.ok(preset.pins.inputs.some((pin) => pin.kind === 'exec'), preset.id);
       assert.ok(preset.pins.outputs.some((pin) => pin.kind === 'exec'), preset.id);
     }
   }
@@ -80,7 +81,7 @@ test('every catalog contract survives all export formats without changing the bo
   const exported = JSON.parse(files.find((file) => file.path === '.ship-loop/graph.json').content);
   assert.deepEqual(exported.diagram, state);
   const adapters = JSON.parse(files.find((file) => file.path === '.ship-loop/adapters.json').content);
-  assert.deepEqual(Object.keys(adapters.commands), state.cards.filter((card) => card.category === 'execution').map((card) => card.id));
+  assert.deepEqual(Object.keys(adapters.commands), state.cards.filter((card) => card.category === 'execution' && card.type !== 'human').map((card) => card.id));
   assert.deepEqual(Object.keys(adapters.dataBindings), state.cards.filter((card) => card.category === 'data').map((card) => card.id));
   const backup = JSON.parse(build(state, { format: 'json' }).files[0].content);
   const { format, ...restored } = backup;
@@ -89,21 +90,21 @@ test('every catalog contract survives all export formats without changing the bo
   assert.deepEqual(state, original);
 });
 
-test('a content loop connects a trigger, agent work, review, and a retry with feedback', () => {
+test('a content loop connects a trigger, agent work, human review, and a retry with feedback', () => {
   const cards = [
     node('start-trigger', 'weekly-start', { body: 'Start on Monday at 09:00 for the next customer newsletter. Deduplicate by edition.' }),
     node('agent-task', 'write', { title: 'Draft a newsletter', body: 'Write an accessible customer newsletter from the supplied brief and approved facts. Produce a versioned draft.' }),
-    node('acceptance-criteria', 'quality', { body: 'Require accurate source links, accessible text, and one approved offer.' }),
-    node('review-result', 'review'),
+    node('context', 'quality', { title: 'Acceptance criteria', body: 'Require accurate source links, accessible text, and one approved offer.' }),
+    node('human', 'review', { title: 'Editor review' }),
   ];
   const edges = [
     link('begin', 'weekly-start', 'started', 'write', 'exec'),
     link('task-value', 'weekly-start', 'task', 'write', 'task', 'variable'),
-    link('criteria-value', 'quality', 'criteria', 'write', 'criteria', 'variable'),
+    link('criteria-value', 'quality', 'context', 'write', 'context', 'variable'),
     link('drafted', 'write', 'done', 'review', 'exec'),
-    link('draft-value', 'write', 'result', 'review', 'result', 'variable'),
-    link('changes', 'review', 'changes', 'write', 'again'),
-    link('findings', 'review', 'feedback', 'write', 'feedback', 'variable'),
+    link('draft-value', 'write', 'result', 'review', 'context', 'variable'),
+    link('changes', 'review', 'rejected', 'write', 'again'),
+    link('findings', 'review', 'response', 'write', 'context', 'variable'),
   ];
   // A partial template keeps unresolved routes explicit in its export.
   const state = board(cards, edges);

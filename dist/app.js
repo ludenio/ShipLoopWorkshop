@@ -969,6 +969,7 @@ $('#card-form').onsubmit = (event) => {
   const pins = { inputs: readPinsFromEditor('in'), outputs: readPinsFromEditor('out') };
   if (categoryFor({ type, category: $('#card-category').value }) === 'data') {
     pins.outputs.filter((pin) => pin.kind === 'data').forEach((pin) => { if (!pin.name) pin.name = $('#card-title').value.trim(); });
+    [...pins.inputs, ...pins.outputs].forEach((pin) => { if (previous && pin.name === previous.title) pin.name = $('#card-title').value.trim(); });
   }
   const card = { id: id || uid(), title: $('#card-title').value.trim(), body: $('#card-body').value, type, category: $('#card-category').value, x: position.x, y: position.y, pins };
   if (id) {
