@@ -36,19 +36,25 @@
     <a class="workshop-link" href="https://ludenio.github.io/WebGameTemplateForAgents/">Game workshop <span aria-hidden="true">↗</span></a>
     <span id="saved">Saved on this device</span>
     <button id="theme-toggle" type="button" aria-label="Switch color theme">☼ Light</button>
-    <button id="export" type="button">Export board ↗</button>
+    <button id="export" type="button" aria-haspopup="dialog">Export loop ↗</button>
     <button id="reset" type="button">Reset</button>
   </div>
 </header>
 
 <main>
   <aside>
-    <h2>Blueprint palette</h2>
-    <div class="palette-group">
-      <div class="palette-label">Execution flow</div>
+    <h2>Blocks</h2>
+    <p class="palette-description">Building blocks for your team's workflow. Add a block, then edit it for your scenario.</p>
+    <label class="block-search-label" for="block-search">Find a block
+      <input id="block-search" type="search" placeholder="Search blocks…" autocomplete="off">
+    </label>
+    <p id="palette-count" role="status" aria-live="polite"></p>
+    <p id="palette-empty" hidden>No matching blocks. Try a different search.</p>
+    <div class="palette-group" id="flow-group">
+      <div class="palette-label">Workflow</div>
       <div id="flow-library"></div>
     </div>
-    <div class="palette-group">
+    <div class="palette-group" id="data-group">
       <div class="palette-label">Variables</div>
       <div id="data-library"></div>
     </div>
@@ -60,14 +66,15 @@
 
   <section class="workspace">
     <div class="lesson">
+      <div class="lesson-example">Guided example · software delivery</div>
       <div class="lesson-top">
         <div>
-          <span id="step-number">00 / 08</span>
+          <span id="step-number">00 / 27</span>
           <strong id="step-title">Start with an empty board</strong>
         </div>
-        <button id="next" class="primary" type="button">Give the task to an agent →</button>
+        <button id="next" class="primary" type="button">A task exists →</button>
       </div>
-      <p id="step-description">Begin with the smallest system that could work. We will grow it together.</p>
+      <p id="step-description">Nothing is on the board yet. A ship loop starts from a task that already exists.</p>
       <div id="progress"></div>
     </div>
     <div class="board-toolbar">
@@ -79,6 +86,7 @@
         <button type="button" id="zoom-reset" aria-label="Reset zoom to 100%">100%</button>
         <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
         <button type="button" id="zoom-fit" aria-label="Fit all nodes in view">Fit</button>
+        <button type="button" id="zoom-auto" aria-pressed="true" title="Follow each step automatically. Moving or zooming the canvas turns this off.">Auto</button>
       </div>
       <div>
         <button id="undo" type="button" disabled>Undo</button>
@@ -164,6 +172,40 @@
     <button id="confirm-reset" class="danger" type="button">Clear board</button>
   </div>
 </dialog>
+<dialog id="export-dialog" aria-labelledby="export-title" aria-describedby="export-intro">
+  <div class="dialog-heading">
+    <h2 id="export-title">Take your loop with you</h2>
+    <button type="button" class="close" aria-label="Close export">×</button>
+  </div>
+  <p id="export-intro">Export the diagram as it is now. Copy a prompt into your agent, or download the files to use in your repository.</p>
+  <p id="export-summary"></p>
+  <label for="export-format">Export as
+    <select id="export-format">
+      <option value="agent">A prompt for an agent</option>
+      <option value="actions">A set of GitHub Actions</option>
+      <option value="actions-prompt">A prompt describing the required GitHub Actions</option>
+      <option value="json">Board JSON (backup)</option>
+    </select>
+  </label>
+  <label id="export-context-label" for="export-context">Your company, game, or product <span class="optional">(optional)</span>
+    <textarea id="export-context" rows="2" placeholder="e.g. Our co-op game, its repository, and the tools our team uses"></textarea>
+  </label>
+  <p id="export-note"></p>
+  <label id="export-file-label" for="export-file">Preview file
+    <select id="export-file"></select>
+  </label>
+  <label for="export-preview">Export preview
+    <textarea id="export-preview" readonly rows="12" spellcheck="false"></textarea>
+  </label>
+  <div class="dialog-actions export-actions">
+    <button id="export-copy" type="button">Copy prompt</button>
+    <button id="export-download" class="primary" type="button">Download prompt</button>
+  </div>
+  <p id="export-status" role="status" aria-live="polite"></p>
+</dialog>
+<script src="blocks.js"></script>
+<script src="export.js"></script>
+<script src="export-ui.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

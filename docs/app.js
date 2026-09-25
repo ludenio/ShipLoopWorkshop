@@ -3,12 +3,12 @@ const $ = (selector) => document.querySelector(selector);
 const types = {
   trigger: { icon: 'ϟ', label: 'Trigger', category: 'execution' },
   agent: { icon: '✳', label: 'Agent', category: 'execution' },
+  automation: { icon: '⚙', label: 'Automation', category: 'execution' },
   human: { icon: '◎', label: 'Human', category: 'execution' },
   context: { icon: '▤', label: 'Context', category: 'data' },
   feedback: { icon: '⌁', label: 'Feedback', category: 'data' },
   task: { icon: '▣', label: 'Task', category: 'data' },
 };
-const flowTypes = ['trigger', 'agent', 'human'];
 const dataTypes = ['context', 'feedback', 'task'];
 const TYPE_ALIASES = { artifact: 'context', text: 'context', review: 'feedback', prompt: 'agent', action: 'agent' };
 const DATA_ALIASES = { artifact: 'context', text: 'context', review: 'feedback', bool: 'context', issue: 'task' };
@@ -24,19 +24,188 @@ const variableTypes = {
 };
 const canonicalType = (type) => TYPE_ALIASES[type] || type;
 const canonicalDataType = (type) => DATA_ALIASES[type] || type;
-const LAST_STAGE = 8;
-const stages = [
-  ['Start with an empty board', 'Begin with the smallest system that could work. We will grow it together.', 'Give the task to an agent →'],
-  ['The task goes to an agent', '0–8 min · A task, and an agent told to complete it. That is the whole system.', 'Put a person in the loop →'],
-  ['A person asks through a terminal', '8–16 min · Someone takes the task and types the ask. The agent no longer receives the task by itself.', 'Start it without typing →'],
-  ['The ask can start itself', '16–24 min · The same work begins when the task is there. A person does not have to type it in.', 'Split do and clean up →'],
-  ['Do the work, then clean it up', '24–32 min · One writable turn and a local commit. A fresh agent cleans that commit and pushes.', 'Judge the result →'],
-  ['Review, tests, and a person', '32–42 min · Another read of the pushed commit. Tests run. Then a person can take it.', 'Send problems back →'],
-  ['Rejection is feedback', '42–50 min · A bad review or a failing test is not the end. The problems return to the same work.', 'Allow the work to stop →'],
-  ['The work can also stop', '50–55 min · A question waits for a person. Giving up or changing nothing ends the run.', 'Bound the retries →'],
-  ['A few tries, then leave a draft', '55–60 min · Another attempt needs tries and time left. Otherwise the change stays a draft.', 'Workshop complete ✓'],
+// The guided software-delivery example keeps its own steps and pin contracts.
+// The palette below is shared by company- and scenario-specific templates.
+const lessonPresets = [
+  { id: 'person', group: 'flow', type: 'human', title: 'A person', hint: 'Starts the agent', body: 'Starts the agent and asks it to solve the task.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }] } },
+  { id: 'implementation', group: 'flow', type: 'agent', title: 'Implement', hint: 'Solve the task', body: 'Solve the task it is given and hand over the changes.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'again', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'changes', kind: 'data', name: 'Changes', dataType: 'context' }, { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' }] } },
+  { id: 'task-created', group: 'flow', type: 'trigger', title: 'Task Created', hint: 'Carries the task', body: 'A task was created. It starts the run and hands the task on.', pins: { inputs: [{ id: 'again', kind: 'exec', name: '' }, { id: 'task', kind: 'data', name: 'Task', dataType: 'task', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'task', kind: 'data', name: 'Task', dataType: 'task' }] } },
+  { id: 'classify', group: 'flow', type: 'agent', title: 'Classify the Task', hint: 'Clear or unclear', body: 'Clear, and obvious how to proceed: continue. Unclear: hand it to a person.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'clear', kind: 'exec', name: 'Clear' }, { id: 'unclear', kind: 'exec', name: 'Unclear' }] } },
+  { id: 'need-human', group: 'flow', type: 'human', title: 'Need Human', hint: 'Execution stops', body: 'Work cannot continue: information is missing, or the project is already broken. A person takes over.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [] } },
+  { id: 'run-tests', group: 'flow', type: 'agent', title: 'Run Auto Tests', hint: 'Before or after the change', body: 'Run the test suite. Report whether it passed and what failed.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'passed', kind: 'exec', name: 'Passed' }, { id: 'failed', kind: 'exec', name: 'Failed' }, { id: 'report', kind: 'data', name: 'Failure report', dataType: 'feedback' }] } },
+  { id: 'pull-request', group: 'flow', type: 'agent', title: 'Create Pull Request', hint: 'Tests passed', body: 'The tests passed. Open a pull request with the changes.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'pr', kind: 'data', name: 'Pull Request', dataType: 'context' }] } },
+  { id: 'explainer', group: 'flow', type: 'agent', title: 'Explain', hint: 'Explains the change', body: 'Writes a human-readable report: what was fixed, how to reproduce the original issue, and how to test the fix.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Explanation', dataType: 'context' }] } },
+  { id: 'cleanup', group: 'flow', type: 'agent', title: 'Clean Up', hint: 'Simplify changes', body: 'Simplify changes.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'changes', kind: 'data', name: 'Changes', dataType: 'context' }, { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' }] } },
+  { id: 'review', group: 'flow', type: 'agent', title: 'Code Review', hint: 'Approve or reject', body: 'Review the changes. Approve them, or send them back to Implement.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'approved', kind: 'exec', name: 'Approved' }, { id: 'rejected', kind: 'exec', name: 'Rejected' }, { id: 'changes', kind: 'data', name: 'Changes', dataType: 'context' }, { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' }] } },
+  { id: 'doctor', group: 'flow', type: 'agent', title: 'Doctor', hint: 'Report in, task out', body: 'Reads the Problems Report and writes a new task that fixes what went wrong.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'task', kind: 'data', name: 'New task', dataType: 'task' }] } },
+  { id: 'second-opinion', group: 'flow', type: 'agent', title: 'Bro', hint: 'Any agent can ask', body: 'An independent agent any other agent can consult before it commits to a decision.', pins: { inputs: [], outputs: [{ id: 'opinion', kind: 'data', name: 'Opinion', dataType: 'context' }] } },
+  { id: 'player-report', group: 'flow', type: 'human', title: 'Player Report', hint: 'A player reports an issue', body: 'A player reports an issue with logs, screenshots, or a written description.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Report', dataType: 'feedback' }] } },
+  { id: 'designer-report', group: 'flow', type: 'human', title: 'Game Designer Report', hint: 'What should change', body: 'A game designer plays the game and describes what should change, and why.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Report', dataType: 'feedback' }] } },
+  { id: 'playtest-report', group: 'flow', type: 'automation', title: 'Playtest Report', hint: 'When a playtest ends', body: 'When a playtest ends, its report becomes a task.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Report', dataType: 'feedback' }] } },
+  { id: 'after-playtest', group: 'flow', type: 'agent', title: 'Auto Playtest', hint: 'An agent plays the game', body: 'Play the game through Automation Bridge, which lets the agent interact with the game, then write a Playtest Report.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Playtest report', dataType: 'feedback' }] } },
+  { id: 'qa-report', group: 'flow', type: 'human', title: 'QA Report', hint: 'Testers file bugs', body: 'Testers play the game and file bugs with reproduction steps and other relevant details.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Report', dataType: 'feedback' }] } },
+  { id: 'human-playtest', group: 'flow', type: 'human', title: 'Human Playtest', hint: 'People play the game', body: 'People play the game and write a Playtest Report.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Playtest report', dataType: 'feedback' }] } },
+  { id: 'cron', group: 'flow', type: 'trigger', title: 'Cron', hint: 'Every day at 4:00 a.m.', body: 'Starts Auto Playtest every day at 4:00 a.m.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }] } },
+  { id: 'task', group: 'data', type: 'task', title: 'Task', hint: 'The work to solve', body: 'The task already exists. Pass it to the agent as the work to solve.', pins: { inputs: [{ id: 'task', kind: 'data', name: 'Task', dataType: 'task', multi: true }], outputs: [{ id: 'task', kind: 'data', name: 'Task', dataType: 'task' }] } },
+  { id: 'pull-request-var', group: 'data', type: 'context', title: 'Pull Request', hint: 'The result of the run', body: 'The pull request with the changes.', pins: { inputs: [{ id: 'pr', kind: 'data', name: 'Pull Request', dataType: 'context' }], outputs: [{ id: 'pr', kind: 'data', name: 'Pull Request', dataType: 'context' }] } },
+  { id: 'problems-report', group: 'data', type: 'feedback', title: 'Problems Report', hint: 'Shared by every agent', body: 'A shared record. Each agent adds the issues it hit near the end of its work.', pins: { inputs: [{ id: 'add', kind: 'data', name: 'Add issues', dataType: 'feedback', multi: true }], outputs: [{ id: 'report', kind: 'data', name: 'Problems Report', dataType: 'feedback' }] } },
 ];
-const starterPositions = [[60, 70], [320, 70], [580, 70], [840, 70], [1100, 70], [1360, 70]];
+const lessonPresetById = Object.fromEntries(lessonPresets.map((preset) => [preset.id, preset]));
+const presets = ShipLoopBlocks.presets;
+const presetById = Object.fromEntries(presets.map((preset) => [preset.id, preset]));
+const lessonSteps = [
+  ['Start with an empty board', 'Nothing is on the board yet. A ship loop starts from a task that already exists.', 'A task exists →'],
+  ['A task exists', 'The task is already here. Nothing is solving it yet.', 'Give it to an agent →', () => {
+    place('task', 'task', 40, 48 + NODE_H + NODE_GAP);
+  }],
+  ['The task goes to Implement', 'The task goes into Implement’s Context: the information it needs to solve it. Nothing starts it yet.', 'Let a person start it →', () => {
+    place('implement', 'implementation', 40 + NODE_W + NODE_GAP, 48);
+    edge('task', 'implement', '', 'variable', 'task', 'context');
+  }],
+  ['A person starts the work', 'A person starts Implement with the white control arrow, and the agent solves the task. Someone has to remember to start every run.', 'Start when a task is created →', () => {
+    placeNext('person', 'person', 'implement', 'left');
+    edge('person', 'implement', '', 'execution', 'exec', 'exec');
+  }],
+  ['Task Created starts the work', 'The person no longer starts the run. When a task is created, Task Created starts Implement and hands it the task, so a separate Task is no longer needed. It starts on every task, even one that is too vague to act on.', 'Classify the task first →', () => {
+    placeNext('created', 'task-created', 'person', 'left');
+    removeCard('person');
+    removeCard('task');
+    edge('created', 'implement', '', 'execution', 'exec', 'exec');
+    edge('created', 'implement', '', 'variable', 'task', 'context');
+  }],
+  ['Classify the task', 'Before any work, the agent classifies the task. A clear task, obvious how to proceed, goes to Implement. Nothing handles an unclear one yet.', 'Hand unclear tasks to a person →', () => {
+    state.edges = state.edges.filter((item) => !(item.from === 'created' && item.to === 'implement' && item.kind === 'execution'));
+    placeNext('classify', 'classify', 'created', 'right');
+    edge('created', 'classify', '', 'execution', 'exec', 'exec');
+    edge('created', 'classify', '', 'variable', 'task', 'context');
+    edge('classify', 'implement', 'Clear', 'execution', 'clear', 'exec');
+  }],
+  ['Unclear tasks go to Need Human', 'An unclear task goes to Need Human and the run stops, because work cannot continue without the missing information. Clear tasks are still edited without a known starting point.', 'Run tests before the work →', () => {
+    placeNext('needhuman', 'need-human', 'classify', 'below');
+    edge('classify', 'needhuman', 'Unclear', 'execution', 'unclear', 'exec');
+    edge('created', 'needhuman', '', 'variable', 'task', 'context');
+  }],
+  ['Tests run before the work', 'A clear task runs the suite before changing anything. Passed: Implement starts. Failed: the project is already broken, so the task goes to Need Human too. Nothing checks the change itself yet.', 'Run tests after the work →', () => {
+    unlink('classify', 'implement');
+    insertBefore('baseline', 'run-tests', 'implement');
+    edge('classify', 'baseline', 'Clear', 'execution', 'clear', 'exec');
+    edge('baseline', 'implement', 'Passed', 'execution', 'passed', 'exec');
+    edge('baseline', 'needhuman', 'Failed', 'execution', 'failed', 'exec');
+  }],
+  ['Tests run again after the work', 'Implement hands its Changes to a second test run, which judges them. Nothing happens yet when these tests fail.', 'Send failures back →', () => {
+    placeReturning('tests', 'run-tests', 'implement');
+    edge('implement', 'tests', '', 'execution', 'exec', 'exec');
+    edge('implement', 'tests', '', 'variable', 'changes', 'context');
+  }],
+  ['Failed tests go back to Implement', 'When the tests after the work fail, control returns to Implement for another attempt. It does not know what broke yet.', 'Pass the failure report →', () => {
+    edge('tests', 'implement', 'Failed', 'execution', 'failed', 'again');
+  }],
+  ['The failure report joins the Context', 'The failure report goes into Implement’s Context, so the next attempt knows what broke. A passing run still goes nowhere.', 'Open a pull request →', () => {
+    edge('tests', 'implement', '', 'variable', 'report', 'context');
+  }],
+  ['Passing tests open a pull request', 'When the tests after the work pass, the agent opens a pull request with the changes.', 'Keep the pull request →', () => {
+    placeNext('pr', 'pull-request', 'tests', 'right');
+    edge('tests', 'pr', 'Passed', 'execution', 'passed', 'exec');
+    edge('implement', 'pr', '', 'variable', 'changes', 'context');
+  }],
+  ['The Pull Request', 'The pull request becomes a variable: the result of the run. It says nothing about what changed or how to check it.', 'Explain the changes →', () => {
+    placeNext('prvar', 'pull-request-var', 'pr', 'below');
+    edge('pr', 'prvar', '', 'variable', 'pr', 'pr');
+  }],
+  ['Explain describes the change', 'Before the pull request opens, Explain reads the original task and the changes. It writes a clear report: what was fixed, how to reproduce the original issue, and how to test the fix. The report goes into the pull request for testers, reviewers, developers, and whoever merges it. Nobody reviews the changes before the tests.', 'Review the changes →', () => {
+    unlink('tests', 'pr');
+    insertBefore('explainer', 'explainer', 'pr');
+    edge('tests', 'explainer', 'Passed', 'execution', 'passed', 'exec');
+    edge('explainer', 'pr', '', 'execution', 'exec', 'exec');
+    edge('created', 'explainer', '', 'variable', 'task', 'context');
+    edge('implement', 'explainer', '', 'variable', 'changes', 'context');
+    edge('explainer', 'pr', '', 'variable', 'report', 'context');
+    setCardText('pr', '', 'Open a pull request with the changes and Explain’s report.');
+    setCardText('prvar', '', 'The pull request: the changes plus a report that explains them.');
+  }],
+  ['Code Review', 'Code Review reads the changes before the tests. Approved: they go on to the tests, Explain, and the pull request. Rejected: control and the Changes go back to Implement for another attempt. The changes are still exactly as the writing turn left them.', 'Clean up the changes →', () => {
+    unlink('implement', 'tests');
+    unlink('implement', 'pr');
+    unlink('implement', 'explainer');
+    insertBefore('review', 'review', 'tests');
+    edge('implement', 'review', '', 'execution', 'exec', 'exec');
+    edge('implement', 'review', '', 'variable', 'changes', 'context');
+    edge('review', 'tests', 'Approved', 'execution', 'approved', 'exec');
+    edge('review', 'tests', '', 'variable', 'changes', 'context');
+    edge('review', 'pr', '', 'variable', 'changes', 'context');
+    edge('review', 'explainer', '', 'variable', 'changes', 'context');
+    edge('review', 'implement', 'Rejected', 'execution', 'rejected', 'again');
+    edge('review', 'implement', '', 'variable', 'changes', 'context');
+  }],
+  ['Clean Up', 'A fresh agent simplifies the changes before Code Review reads them. Nobody collects the problems the agents hit yet.', 'Collect the problems →', () => {
+    unlink('implement', 'review');
+    insertBefore('cleanup', 'cleanup', 'review');
+    edge('implement', 'cleanup', '', 'execution', 'exec', 'exec');
+    edge('implement', 'cleanup', '', 'variable', 'changes', 'context');
+    edge('cleanup', 'review', '', 'execution', 'exec', 'exec');
+    edge('cleanup', 'review', '', 'variable', 'changes', 'context');
+  }],
+  ['Problems go to a shared report', 'Every agent adds the issues it hit to one shared Problems Report. Nobody reads the report yet.', 'Call the Doctor →', () => {
+    placeNext('problems', 'problems-report', 'tests', 'below');
+    edge('implement', 'problems', '', 'variable', 'problems', 'add');
+    edge('cleanup', 'problems', '', 'variable', 'problems', 'add');
+    edge('review', 'problems', '', 'variable', 'problems', 'add');
+    edge('baseline', 'problems', '', 'variable', 'report', 'add');
+    edge('tests', 'problems', '', 'variable', 'report', 'add');
+  }],
+  ['The Doctor reads the report', 'When the pull request is open, the Doctor agent reads the Problems Report and writes a new task that addresses what went wrong. Nothing starts that task yet.', 'Use the new task →', () => {
+    placeNext('doctor', 'doctor', 'pr', 'right');
+    edge('pr', 'doctor', '', 'execution', 'exec', 'exec');
+    edge('problems', 'doctor', '', 'variable', 'report', 'context');
+  }],
+  ['The Doctor’s task goes to Task Created', 'The Doctor passes its new task into Task Created. Nothing starts the loop for it yet.', 'Start the loop again →', () => {
+    edge('doctor', 'created', '', 'variable', 'task', 'task');
+  }],
+  ['The new task starts the loop', 'The Doctor’s control arrow fires Task Created. A task is created, agents work and report problems, the Doctor writes a new task, and the loop runs again. Each agent still decides alone.', 'Ask Bro →', () => {
+    edge('doctor', 'created', 'New task', 'execution', 'exec', 'again');
+  }],
+  ['Bro', 'Every agent can ask Bro, an independent agent, for a second opinion before it commits to a decision. So far only the Doctor creates tasks.', 'Where do tasks come from? →', () => {
+    placeNext('opinion', 'second-opinion', 'created', 'below');
+    ['classify', 'implement', 'cleanup', 'review', 'doctor'].forEach((id) => {
+      edge('opinion', id, '', 'variable', 'opinion', 'context');
+    });
+  }],
+  ['A player reports an issue', 'A player reports an issue with logs, screenshots, or a written description. The report goes into Task Created as the task, and the loop starts.', 'Add designer feedback →', () => {
+    placeNext('player', 'player-report', 'created', 'left');
+    edge('player', 'created', '', 'execution', 'exec', 'again');
+    edge('player', 'created', '', 'variable', 'report', 'task');
+  }],
+  ['A game designer reports', 'A game designer plays the game and describes what should change, and why. That report creates a task too.', 'Add QA →', () => {
+    placeNext('designer', 'designer-report', 'player', 'below');
+    edge('designer', 'created', '', 'execution', 'exec', 'again');
+    edge('designer', 'created', '', 'variable', 'report', 'task');
+  }],
+  ['QA files bugs', 'Testers play the game and file bugs with reproduction steps and other details. Each bug creates a task.', 'Add playtests →', () => {
+    placeNext('qa', 'qa-report', 'designer', 'below');
+    edge('qa', 'created', '', 'execution', 'exec', 'again');
+    edge('qa', 'created', '', 'variable', 'report', 'task');
+  }],
+  ['Playtest Report', 'When a playtest ends, its Playtest Report creates a task. Nobody is playing the game yet.', 'Add a human playtest →', () => {
+    placeNext('playtest', 'playtest-report', 'qa', 'below');
+    edge('playtest', 'created', '', 'execution', 'exec', 'again');
+    edge('playtest', 'created', '', 'variable', 'report', 'task');
+  }],
+  ['People playtest', 'In a Human Playtest, people play the game and write a report. It goes to Playtest Report, which creates a task. Every session needs people to find the time.', 'Let an agent playtest →', () => {
+    placeNext('humanplay', 'human-playtest', 'playtest', 'left');
+    edge('humanplay', 'playtest', '', 'execution', 'exec', 'exec');
+    edge('humanplay', 'playtest', '', 'variable', 'report', 'context');
+  }],
+  ['An agent playtests', 'Auto Playtest: an agent plays the game through Automation Bridge, which lets it interact with the game, and sends its report to Playtest Report alongside the human one. Someone still has to start it.', 'Run it every night →', () => {
+    placeNext('afterplay', 'after-playtest', 'humanplay', 'below');
+    edge('afterplay', 'playtest', '', 'execution', 'exec', 'exec');
+    edge('afterplay', 'playtest', '', 'variable', 'report', 'context');
+  }],
+  ['Cron starts the playtest', 'Every day at 4:00 a.m., Cron starts Auto Playtest. Human playtests still run whenever people play. Players, designers, QA, playtests, and the Doctor all create tasks, and every task starts the same loop. This is the ship loop.', 'Workshop complete ✓', () => {
+    placeNext('cron', 'cron', 'afterplay', 'left');
+    edge('cron', 'afterplay', '', 'execution', 'exec', 'exec');
+  }],
+];
+const LAST_STAGE = lessonSteps.length - 1;
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
 const GRID = 32;
@@ -48,6 +217,18 @@ let history = [];
 let pendingEdge = null;
 let dragMoved = false;
 let pendingFit = false;
+let pendingPan = false;
+let stepMarks = { added: new Set(), changed: new Set() };
+let stepEdgeKeys = new Set();
+let removedGhosts = [];
+let stepNote = '';
+let stepMarkTimer = 0;
+let edgeDrawStart = 0;
+let laneExtent = null;
+const MOVE_MS = 600;
+let movedFrom = new Map();
+let moveStart = 0;
+let phaseDelay = 0;
 let spaceHeld = false;
 let pointerDrag = null;
 let canvasPan = null;
@@ -56,6 +237,8 @@ let pinch = null;
 const activePointers = new Map();
 let saveTimer = 0;
 let animateTimer = 0;
+let autoCamera = true;
+try { autoCamera = localStorage.getItem('ship-loop-auto-camera') !== 'off'; } catch {}
 
 try {
   const saved = JSON.parse(localStorage.getItem('ship-loop-board-v1'));
@@ -124,156 +307,14 @@ function addPin(card, dir, pin) {
 function pinLinked(cardId, pinId, dir) {
   return state.edges.some((edge) => (dir === 'out' ? edge.from === cardId && edge.fromPin === pinId : edge.to === cardId && edge.toPin === pinId));
 }
-function convertCardToData(card, type) {
-  card.type = type;
-  card.category = 'data';
-  const dataIn = (card.pins?.inputs || []).filter((pin) => pin.kind === 'data');
-  const dataOut = (card.pins?.outputs || []).filter((pin) => pin.kind === 'data');
-  const defaults = defaultPins(type);
-  card.pins = {
-    inputs: dataIn.length ? dataIn : defaults.inputs,
-    outputs: dataOut.length ? dataOut : defaults.outputs,
-  };
-}
-function bypassExecNode(id) {
-  const incoming = state.edges.filter((item) => item.to === id && item.kind === 'execution');
-  const outgoing = state.edges.filter((item) => item.from === id && item.kind === 'execution');
-  incoming.forEach((inc) => {
-    outgoing.forEach((out) => {
-      if (state.edges.some((item) => item.from === inc.from && item.to === out.to && item.fromPin === inc.fromPin && item.toPin === out.toPin && item.kind === 'execution')) return;
-      state.edges.push({ id: uid(), from: inc.from, to: out.to, fromPin: inc.fromPin, toPin: out.toPin, kind: 'execution', label: out.label || inc.label || '' });
-    });
-    const fromCard = state.cards.find((item) => item.id === inc.from);
-    const toCard = state.cards.find((item) => item.id === id);
-    if (!fromCard || !toCard || state.edges.some((item) => item.from === inc.from && item.to === id && item.kind === 'variable')) return;
-    const outPin = addPin(fromCard, 'out', { id, kind: 'data', name: toCard.title, dataType: dataTypes.includes(toCard.type) ? toCard.type : 'context' });
-    const inPin = firstPin(toCard, 'in', 'data') || addPin(toCard, 'in', { id: 'value', kind: 'data', name: toCard.title, dataType: toCard.type });
-    state.edges.push({ id: uid(), from: inc.from, to: id, fromPin: outPin.id, toPin: inPin.id, kind: 'variable', label: '' });
-  });
-  state.edges = state.edges.filter((item) => !((item.from === id || item.to === id) && item.kind === 'execution'));
-}
-
+// Boards saved before the guided example was rebuilt cannot be migrated, so they start fresh.
 function migrateWorkshop() {
-  const renamePin = (pin) => {
-    if (!pin) return;
-    if (pin.id === 'issue') pin.id = 'task';
-    if (pin.dataType === 'issue') pin.dataType = 'task';
-    if (pin.name === 'Issue') pin.name = 'Task';
-    if (pin.kind === 'exec' && pin.name === 'Then') pin.name = '';
-    if (pin.dataType) pin.dataType = canonicalDataType(pin.dataType);
-    if (pin.name === 'Artifact' || pin.name === 'Text' || pin.name === 'Bool') pin.name = 'Context';
-    if (pin.name === 'Review' || pin.name === 'Review result') pin.name = 'Feedback';
-  };
-  const hadOldLoop = !state.workshopV3 && state.cards.some((card) => card.id === 'implement' || card.id === 'issue');
-  state.cards.forEach((card) => {
-    if (card.id === 'issue') card.id = 'task';
-    if (card.title === 'Issue created') card.title = 'Task created';
-    if (card.title === 'Implement the issue') card.title = 'Implement the task';
-    if (card.id === 'implement' && card.title === '5. Implement the change') card.title = '5. Implementation';
-    ensureCardPins(card);
-    card.pins.inputs.forEach(renamePin);
-    card.pins.outputs.forEach(renamePin);
-  });
-  state.edges.forEach((edge) => {
-    if (edge.from === 'issue') edge.from = 'task';
-    if (edge.to === 'issue') edge.to = 'task';
-    if (edge.fromPin === 'issue') edge.fromPin = 'task';
-    if (edge.toPin === 'issue') edge.toPin = 'task';
-    if (edge.label === 'New issue') edge.label = 'New task';
-  });
-  if (hadOldLoop && Number.isInteger(state.stage) && state.stage >= 1 && state.stage <= 7) state.stage += 1;
-  state.workshopV3 = true;
-  if (!state.workshopV4) {
-    const toData = [];
-    state.cards.forEach((card) => {
-      if (card.id === 'report' && (card.type === 'prompt' || card.type === 'action')) {
-        if (card.title === 'Report completion') card.title = 'Completion report';
-        convertCardToData(card, 'context');
-        if (card.y < 200) { card.x = 750; card.y = 250; }
-        toData.push(card.id);
-      } else if (card.id === 'pr' && (card.type === 'prompt' || card.type === 'action')) {
-        if (card.title === 'Open a ready PR') card.title = 'Ready pull request';
-        convertCardToData(card, 'context');
-        if (card.y < 200) { card.x = 1350; card.y = 250; }
-        toData.push(card.id);
-      } else if (card.type === 'prompt' || card.type === 'action') {
-        card.type = 'agent';
-        card.category = 'execution';
-      }
-    });
-    toData.forEach(bypassExecNode);
-    const human = state.cards.find((item) => item.id === 'human');
-    const pr = state.cards.find((item) => item.id === 'pr');
-    if (human && pr) {
-      const prIn = addPin(human, 'in', { id: 'pr', kind: 'data', name: 'Ready PR', dataType: 'context' });
-      const prOut = firstPin(pr, 'out', 'data');
-      if (prOut && !state.edges.some((item) => item.from === 'pr' && item.to === 'human' && item.kind === 'variable')) {
-        state.edges.push({ id: uid(), from: 'pr', to: 'human', fromPin: prOut.id, toPin: prIn.id, kind: 'variable', label: '' });
-      }
-    }
-    state.workshopV4 = true;
-  }
-  state.cards.forEach((card) => {
-    if (card.type === 'artifact' || card.type === 'text') {
-      if (card.title === 'Run artifact') card.title = 'Run context';
-      convertCardToData(card, 'context');
-    } else if (card.type === 'review') {
-      convertCardToData(card, 'feedback');
-    }
-    card.type = canonicalType(card.type);
-  });
-  if (!state.workshopV5) {
-    const task = state.cards.find((item) => item.id === 'task');
-    if (task && (task.type === 'trigger' || task.category === 'execution')) {
-      task.type = 'task';
-      task.category = 'data';
-      ensureCardPins(task);
-      task.pins.inputs = task.pins.inputs.filter((pin) => pin.kind === 'data');
-      task.pins.outputs = task.pins.outputs.filter((pin) => pin.kind === 'data');
-      const out = firstPin(task, 'out', 'data') || addPin(task, 'out', { id: 'task', kind: 'data', name: 'Task', dataType: 'task' });
-      out.id = 'task';
-      out.name = 'Task';
-      out.dataType = 'task';
-      if (task.title === 'Issue created') task.title = 'Task created';
-      state.edges = state.edges.filter((item) => !(item.kind === 'execution' && (item.from === 'task' || item.to === 'task')));
-      state.edges.forEach((item) => {
-        if (item.from === 'task' && item.kind === 'variable') item.fromPin = 'task';
-      });
-    }
-    const followup = state.cards.find((item) => item.id === 'followup');
-    if (followup && task) {
-      const out = addPin(followup, 'out', { id: 'task', kind: 'data', name: 'New task', dataType: 'task' });
-      const inn = addPin(task, 'in', { id: 'task', kind: 'data', name: 'Task', dataType: 'task' });
-      if (!state.edges.some((item) => item.from === 'followup' && item.to === 'task' && item.kind === 'variable')) {
-        state.edges.push({ id: uid(), from: 'followup', to: 'task', fromPin: out.id, toPin: inn.id, kind: 'variable', label: '' });
-      }
-    }
-    state.workshopV5 = true;
-  }
-  if (!state.workshopV6) {
-    const obsolete = new Set(['executor', 'doctor', 'mention', 'retry', 'cleanup', 'followup', 'report', 'pr', 'artifact']);
-    if (state.cards.some((item) => obsolete.has(item.id))) {
-      state.cards = [];
-      state.edges = [];
-      state.stage = 0;
-      state.view = defaultView();
-    }
-    state.workshopV6 = true;
-  }
-  if (!state.workshopV7) {
-    const obsolete = new Set(['preflight', 'understand', 'needinfo', 'nothing', 'baseline', 'branch', 'draft', 'reviewer', 'ready', 'budget', 'leftover', 'empty', 'executor']);
-    if (state.cards.some((item) => obsolete.has(item.id) || /^[0-9]+\. /.test(item.title || ''))) {
-      state.cards = [];
-      state.edges = [];
-      state.stage = 0;
-      state.view = defaultView();
-    }
-    state.workshopV7 = true;
-  }
-  if (!state.workshopV8) {
-    if (state.stage > 3 && !state.cards.some((item) => item.id === 'simplify')) state.stage = 3;
-    state.workshopV8 = true;
-  }
+  if (state.workshopV9) return;
+  state.cards = [];
+  state.edges = [];
+  state.stage = 0;
+  state.view = defaultView();
+  state.workshopV9 = true;
 }
 function normalizeState() {
   migrateWorkshop();
@@ -319,6 +360,7 @@ function normalizeState() {
   };
 }
 normalizeState();
+if (!state.cards.length) pendingFit = false;
 
 function checkpoint() { history.push(JSON.stringify({ cards: state.cards, edges: state.edges, stage: state.stage })); if (history.length > 30) history.shift(); }
 function save() { try { localStorage.setItem('ship-loop-board-v1', JSON.stringify(state)); $('#saved').textContent = 'Saved on this device'; } catch { $('#saved').textContent = 'Storage unavailable · export to save'; } }
@@ -347,25 +389,60 @@ function updateGrid() {
   viewport.style.backgroundSize = showMinor ? `${major}px ${major}px,${major}px ${major}px,${minor}px ${minor}px,${minor}px ${minor}px` : `${major}px ${major}px,${major}px ${major}px`;
   viewport.style.backgroundPosition = `${x}px ${y}px`;
 }
-function applyView({ animate = false } = {}) {
-  board.classList.toggle('is-animating', animate);
+const VIEW_ANIMATION_MS = 360;
+let viewFrom = null;
+function paintView() {
   board.style.transform = `translate3d(${state.view.x}px, ${state.view.y}px, 0) scale(${state.view.zoom})`;
-  if (animate) {
-    clearTimeout(animateTimer);
-    animateTimer = setTimeout(() => board.classList.remove('is-animating'), 220);
-  }
   updateGrid();
   $('#zoom-reset').textContent = `${Math.round(state.view.zoom * 100)}%`;
-  saveSoon();
 }
-function zoomAt(screenX, screenY, nextZoom) {
+// The view is tweened through state.view itself, so pin measurements match the painted board on every frame.
+function applyView({ animate = false } = {}) {
+  cancelAnimationFrame(animateTimer);
+  const target = { ...state.view };
+  const from = viewFrom;
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const still = !from || (Math.abs(from.x - target.x) < 0.5 && Math.abs(from.y - target.y) < 0.5 && Math.abs(from.zoom - target.zoom) < 0.001);
+  if (!animate || reduced || still) {
+    viewFrom = { ...target };
+    paintView();
+    saveSoon();
+    return;
+  }
+  const start = performance.now();
+  const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const frame = (now) => {
+    const t = Math.min(1, (now - start) / VIEW_ANIMATION_MS);
+    const k = ease(t);
+    state.view.x = from.x + (target.x - from.x) * k;
+    state.view.y = from.y + (target.y - from.y) * k;
+    state.view.zoom = from.zoom + (target.zoom - from.zoom) * k;
+    viewFrom = { ...state.view };
+    paintView();
+    if (t < 1) animateTimer = requestAnimationFrame(frame);
+    else saveSoon();
+  };
+  state.view.x = from.x;
+  state.view.y = from.y;
+  state.view.zoom = from.zoom;
+  animateTimer = requestAnimationFrame(frame);
+}
+function setAutoCamera(on) {
+  $('#zoom-auto').setAttribute('aria-pressed', String(on));
+  if (autoCamera === on) return;
+  autoCamera = on;
+  try { localStorage.setItem('ship-loop-auto-camera', on ? 'on' : 'off'); } catch {}
+  if (on) keepAllInView();
+}
+function zoomAt(screenX, screenY, nextZoom, { animate = true } = {}) {
+  setAutoCamera(false);
   nextZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
   const worldX = (screenX - state.view.x) / state.view.zoom;
   const worldY = (screenY - state.view.y) / state.view.zoom;
   state.view.zoom = nextZoom;
   state.view.x = screenX - worldX * nextZoom;
   state.view.y = screenY - worldY * nextZoom;
-  applyView();
+  applyView({ animate });
 }
 function zoomBy(factor) {
   const center = viewportCenter();
@@ -386,6 +463,13 @@ function contentBounds() {
     maxX = Math.max(maxX, card.x + width);
     maxY = Math.max(maxY, card.y + height);
   });
+  const byId = new Map(state.cards.map((card) => [card.id, card]));
+  const lanes = state.edges.filter((edge) => edge.kind === 'execution' && byId.has(edge.from) && byId.has(edge.to) && byId.get(edge.to).x < byId.get(edge.from).x).length;
+  if (lanes) minY -= 44 + lanes * 22 + 16;
+  if (laneExtent) {
+    minY = Math.min(minY, laneExtent.top - 16);
+    maxY = Math.max(maxY, laneExtent.bottom + 16);
+  }
   return { x: minX, y: minY, w: Math.max(80, maxX - minX), h: Math.max(80, maxY - minY) };
 }
 function fitView({ animate = true } = {}) {
@@ -399,28 +483,55 @@ function fitView({ animate = true } = {}) {
   state.view.y = (height - bounds.h * zoom) / 2 - bounds.y * zoom;
   applyView({ animate });
 }
-function revealContent({ animate = true } = {}) {
+function keepAllInView() {
   const { width, height } = viewport.getBoundingClientRect();
   if (width < 40 || height < 40 || !state.cards.length) return;
   const bounds = contentBounds();
-  const zoom = state.view.zoom;
   const pad = 56;
-  const viewW = width / zoom;
-  const viewH = height / zoom;
-  const fits = bounds.w <= viewW - (pad * 2) / zoom && bounds.h <= viewH - (pad * 2) / zoom;
-  if (fits) {
-    state.view.x = (width - bounds.w * zoom) / 2 - bounds.x * zoom;
-    state.view.y = (height - bounds.h * zoom) / 2 - bounds.y * zoom;
+  const fitZoom = Math.min((width - pad * 2) / bounds.w, (height - pad * 2) / bounds.h);
+  const zoom = clamp(Math.min(state.view.zoom, fitZoom), MIN_ZOOM, MAX_ZOOM);
+  const left = bounds.x * zoom + state.view.x;
+  const top = bounds.y * zoom + state.view.y;
+  const right = left + bounds.w * zoom;
+  const bottom = top + bounds.h * zoom;
+  const inside = zoom === state.view.zoom && left >= pad && top >= pad && right <= width - pad && bottom <= height - pad;
+  if (inside) return;
+  let x = state.view.x;
+  let y = state.view.y;
+  if (zoom !== state.view.zoom) {
+    x = (width - bounds.w * zoom) / 2 - bounds.x * zoom;
+    y = (height - bounds.h * zoom) / 2 - bounds.y * zoom;
   } else {
-    state.view.x = pad - bounds.x * zoom;
-    state.view.y = Math.max(pad - bounds.y * zoom, (height - bounds.h * zoom) / 2 - bounds.y * zoom);
+    if (left < pad) x += pad - left;
+    else if (right > width - pad) x -= right - (width - pad);
+    if (top < pad) y += pad - top;
+    else if (bottom > height - pad) y -= bottom - (height - pad);
   }
-  applyView({ animate });
+  state.view.zoom = zoom;
+  state.view.x = x;
+  state.view.y = y;
+  applyView({ animate: true });
 }
 
-function palette(typesToShow) {
-  return typesToShow.map((type) => `<button class="library-item" data-type="${type}" style="${cssTheme(type)}"><span class="type-icon">${types[type].icon}</span><strong>${types[type].label}</strong><span class="plus">+</span></button>`).join('');
+function palette(items) {
+  return items.map((preset) => {
+    const type = types[preset.type];
+    return `<button type="button" class="library-item" data-preset="${preset.id}" style="${cssTheme(preset.type)}"><span class="type-icon" aria-hidden="true">${type.icon}</span><span class="preset-copy"><strong>${escape(preset.title)}</strong><span class="preset-hint">${escape(preset.hint)}</span></span></button>`;
+  }).join('');
 }
+function renderPalette() {
+  const query = $('#block-search').value.trim().toLowerCase();
+  const matches = presets.filter((preset) => [preset.title, preset.hint, preset.body, types[preset.type].label].join(' ').toLowerCase().includes(query));
+  const flow = matches.filter((preset) => preset.group === 'flow');
+  const data = matches.filter((preset) => preset.group === 'data');
+  $('#flow-library').innerHTML = palette(flow);
+  $('#data-library').innerHTML = palette(data);
+  $('#flow-group').hidden = flow.length === 0;
+  $('#data-group').hidden = data.length === 0;
+  $('#palette-empty').hidden = matches.length > 0;
+  $('#palette-count').textContent = query ? `${matches.length} matching ${matches.length === 1 ? 'block' : 'blocks'}` : `${presets.length} reusable blocks`;
+}
+$('#block-search').addEventListener('input', renderPalette);
 function pinSlotMarkup(card, pin, dir) {
   const linked = pinLinked(card.id, pin.id, dir);
   const color = pinColor(pin);
@@ -432,6 +543,9 @@ function nodeMarkup(card) {
   const type = types[card.type];
   ensureCardPins(card);
   const source = linkDrag && linkDrag.card.id === card.id;
+  const mark = stepMarks.added.has(card.id) ? 'is-added' : stepMarks.changed.has(card.id) ? 'is-changed' : '';
+  const badge = mark === 'is-added' ? 'Added' : mark === 'is-changed' ? 'Changed' : '';
+  const appear = mark === 'is-added' && phaseDelay ? `--appear-delay:${Math.round(phaseDelay - (performance.now() - moveStart))}ms;` : '';
   const execIn = card.pins.inputs.filter((pin) => pin.kind === 'exec');
   const execOut = card.pins.outputs.filter((pin) => pin.kind === 'exec');
   const dataIn = card.pins.inputs.filter((pin) => pin.kind === 'data');
@@ -439,38 +553,68 @@ function nodeMarkup(card) {
   const dataCols = dataIn.length || dataOut.length
     ? `<div class="pin-columns"><div class="pin-col pin-col-in">${dataIn.map((pin) => pinSlotMarkup(card, pin, 'in')).join('')}</div><div class="pin-col pin-col-out">${dataOut.map((pin) => pinSlotMarkup(card, pin, 'out')).join('')}</div></div>`
     : '';
-  return `<article class="node card ${source ? 'selected' : ''}" tabindex="0" role="button" aria-label="Edit ${escape(card.title)}" data-id="${card.id}" data-category="${categoryFor(card)}" style="left:${card.x}px;top:${card.y}px;${cssTheme(card.type)}"><div class="node-header"><div class="pin-col pin-col-in pin-col-exec">${execIn.map((pin) => pinSlotMarkup(card, pin, 'in')).join('')}</div><div class="node-kind">${type.icon} ${type.label}</div><div class="pin-col pin-col-out pin-col-exec">${execOut.map((pin) => pinSlotMarkup(card, pin, 'out')).join('')}</div></div><h3>${escape(card.title)}</h3><p>${escape(card.body)}</p>${dataCols}</article>`;
+  return `<article class="node card ${source ? 'selected' : ''} ${mark}" tabindex="0" role="button" aria-label="${badge ? `${badge}: ` : ''}Edit ${escape(card.title)}" data-id="${card.id}" data-category="${categoryFor(card)}" style="left:${card.x}px;top:${card.y}px;${appear}${cssTheme(card.type)}">${badge ? `<span class="node-badge">${badge}</span>` : ''}<div class="node-header"><div class="pin-col pin-col-in pin-col-exec">${execIn.map((pin) => pinSlotMarkup(card, pin, 'in')).join('')}</div><div class="node-kind">${type.icon} ${type.label}</div><div class="pin-col pin-col-out pin-col-exec">${execOut.map((pin) => pinSlotMarkup(card, pin, 'out')).join('')}</div></div><h3>${escape(card.title)}</h3><p>${escape(card.body)}</p>${dataCols}</article>`;
+}
+function ghostMarkup(card) {
+  const type = types[card.type] || types.agent;
+  return `<article class="node card is-removed" data-ghost="true" aria-hidden="true" style="left:${card.x}px;top:${card.y}px;${cssTheme(card.type)}"><span class="node-badge">Removed</span><div class="node-header"><div class="node-kind">${type.icon} ${type.label}</div></div><h3>${escape(card.title)}</h3><p>${escape(card.body)}</p></article>`;
 }
 function render() {
   save();
-  $('#flow-library').innerHTML = palette(flowTypes);
-  $('#data-library').innerHTML = palette(dataTypes);
-  $('#nodes').innerHTML = state.cards.map(nodeMarkup).join('');
-  const stage = stages[state.stage];
-  $('#step-number').textContent = `0${state.stage} / 0${LAST_STAGE}`;
-  $('#step-title').textContent = stage[0];
-  $('#step-description').textContent = stage[1];
-  $('#next').textContent = stage[2];
+  renderPalette();
+  $('#nodes').innerHTML = state.cards.map(nodeMarkup).join('') + removedGhosts.map(ghostMarkup).join('');
+  const moving = playMoves();
+  const [title, description, next] = lessonSteps[state.stage];
+  const stepLabel = (value) => String(value).padStart(2, '0');
+  $('#step-number').textContent = `${stepLabel(state.stage)} / ${stepLabel(LAST_STAGE)}`;
+  $('#step-title').textContent = title;
+  $('#step-description').textContent = description;
+  $('#next').textContent = next;
   $('#next').disabled = state.stage === LAST_STAGE;
-  $('#progress').innerHTML = stages.slice(1).map((_, index) => `<div class="progress-segment ${index < state.stage ? 'active' : ''}"></div>`).join('');
+  $('#progress').innerHTML = lessonSteps.slice(1).map((_, index) => `<div class="progress-segment ${index < state.stage ? 'active' : ''}"></div>`).join('');
   $('#count').textContent = `${state.cards.length} nodes · ${state.edges.length} connections`;
   $('#undo').disabled = !history.length;
   $('#connection-hint').classList.toggle('active', !!linkDrag);
-  $('#connection-hint').textContent = linkDrag
-    ? (linkDrag.pin.kind === 'exec' ? 'Drop on a white control pin or a node.' : 'Drop on a node to give it this variable.')
-    : 'Drag ▷ for control flow · Drag ● to pass a variable';
+  $('#connection-hint').classList.toggle('is-step-note', !linkDrag && !!stepNote);
+  if (linkDrag) {
+    $('#connection-hint').textContent = linkDrag.pin.kind === 'exec' ? 'Drop on a white control pin or a node.' : 'Drop on a node to give it this variable.';
+  } else if (stepNote) {
+    $('#connection-hint').innerHTML = stepNote;
+  } else {
+    $('#connection-hint').textContent = 'Drag ▷ for control flow · Drag ● to pass a variable';
+  }
   requestAnimationFrame(() => {
     drawEdges();
-    if (pendingFit) {
+    if (pendingPan) {
+      pendingPan = false;
+      if (autoCamera) keepAllInView();
+    } else if (pendingFit) {
       pendingFit = false;
-      fitView({ animate: false });
+      if (state.cards.length) fitView();
     }
+    if (moving) followMoves();
   });
+}
+// Nodes are rebuilt on every render, so a slide resumes from the elapsed time instead of restarting.
+function playMoves() {
+  const elapsed = performance.now() - moveStart;
+  if (!movedFrom.size || elapsed >= MOVE_MS) return false;
+  movedFrom.forEach(({ dx, dy }, id) => {
+    const node = document.querySelector(`.node[data-id="${CSS.escape(id)}"]`);
+    if (!node?.animate) return;
+    const slide = node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], { duration: MOVE_MS, easing: 'cubic-bezier(.45, 0, .2, 1)', fill: 'backwards' });
+    slide.currentTime = elapsed;
+  });
+  return true;
+}
+function followMoves() {
+  drawEdges();
+  if (performance.now() - moveStart < MOVE_MS) requestAnimationFrame(followMoves);
 }
 function nodeBox(card, el) {
   const width = el?.offsetWidth || 252;
   const height = el?.offsetHeight || 128;
-  return { left: card.x, top: card.y, right: card.x + width, width, height };
+  return { left: card.x, top: card.y, right: card.x + width, bottom: card.y + height, width, height };
 }
 function pinAnchor(card, pinId, dir) {
   const pinEl = document.querySelector(`[data-pin-node="${CSS.escape(card.id)}"][data-pin-id="${CSS.escape(pinId)}"][data-pin-dir="${dir}"] .pin`);
@@ -485,9 +629,33 @@ function pinAnchor(card, pinId, dir) {
   const box = nodeBox(card, document.querySelector(`[data-id="${CSS.escape(card.id)}"]`));
   return { x: dir === 'out' ? box.right : box.left, y: box.top + 36 };
 }
+function returnPath(sx, sy, tx, ty, dip) {
+  const r = 56;
+  return `M${sx},${sy} C${sx + r},${sy} ${sx + r},${dip} ${sx},${dip} L${tx},${dip} C${tx - r},${dip} ${tx - r},${ty} ${tx},${ty}`;
+}
+function lanePath(sx, sy, tx, ty, lane) {
+  const r = 28;
+  if (tx - sx < 4 * r) return returnPath(sx, sy, tx, ty, lane);
+  return `M${sx},${sy} C${sx + r},${sy} ${sx + r},${lane} ${sx + 2 * r},${lane} L${tx - 2 * r},${lane} C${tx - r},${lane} ${tx - r},${ty} ${tx},${ty}`;
+}
+function splineBend(sx, tx) {
+  return tx < sx ? 120 : Math.max(48, Math.abs(tx - sx) * 0.5);
+}
 function splinePath(sx, sy, tx, ty) {
-  const bend = Math.max(48, Math.abs(tx - sx) * 0.5);
+  const bend = splineBend(sx, tx);
   return `M${sx},${sy} C${sx + bend},${sy} ${tx - bend},${ty} ${tx},${ty}`;
+}
+function splineBlocked(sx, sy, tx, ty, boxes) {
+  const bend = splineBend(sx, tx);
+  const pad = 10;
+  for (let step = 1; step < 32; step += 1) {
+    const t = step / 32;
+    const u = 1 - t;
+    const x = u * u * u * sx + 3 * u * u * t * (sx + bend) + 3 * u * t * t * (tx - bend) + t * t * t * tx;
+    const y = u * u * u * sy + 3 * u * u * t * sy + 3 * u * t * t * ty + t * t * t * ty;
+    if (boxes.some((box) => x > box.left - pad && x < box.right + pad && y > box.top - pad && y < box.bottom + pad)) return true;
+  }
+  return false;
 }
 function drawEdges() {
   const svg = $('#arrows');
@@ -502,7 +670,16 @@ function drawEdges() {
     maxX = Math.max(maxX, x);
     maxY = Math.max(maxY, y);
   };
-  state.edges.forEach((edge) => {
+  let returnLane = 0;
+  const boxes = new Map(state.cards.map((card) => [card.id, nodeBox(card, document.querySelector(`.node[data-id="${CSS.escape(card.id)}"]`))]));
+  const lanes = [];
+  const claimLane = (y, dir, x0, x1) => {
+    while (lanes.some((lane) => Math.abs(lane.y - y) < 12 && lane.x0 < x1 && lane.x1 > x0)) y += dir * 14;
+    lanes.push({ y, x0, x1 });
+    return y;
+  };
+  const byKind = (variable) => state.edges.filter((edge) => (edge.kind === 'variable') === variable);
+  [...byKind(false), ...byKind(true)].forEach((edge) => {
     const fromCard = state.cards.find((card) => card.id === edge.from);
     const toCard = state.cards.find((card) => card.id === edge.to);
     if (!fromCard || !toCard) return;
@@ -510,20 +687,46 @@ function drawEdges() {
     const end = pinAnchor(toCard, edge.toPin, 'in');
     const data = edge.kind === 'variable';
     const fromPin = findPin(fromCard, edge.fromPin, 'out');
-    const path = splinePath(start.x, start.y, end.x, end.y);
+    const returning = !data && end.x < start.x;
+    let dip = 0;
+    let routed = false;
+    if (returning) {
+      const tops = state.cards.filter((card) => card.x < start.x && card.x + NODE_W > end.x).map((card) => card.y);
+      dip = Math.min(start.y, end.y, ...tops) - 44 - returnLane * 22;
+      returnLane += 1;
+      lanes.push({ y: dip, x0: end.x - 60, x1: start.x + 60 });
+    } else if (data) {
+      const others = [...boxes].filter(([id]) => id !== edge.from && id !== edge.to).map(([, box]) => box);
+      if (end.x < start.x + 24 || splineBlocked(start.x, start.y, end.x, end.y, others)) {
+        const x0 = Math.min(start.x, end.x) - 60;
+        const x1 = Math.max(start.x, end.x) + 60;
+        const span = [...boxes.values()].filter((box) => box.left < x1 && box.right > x0);
+        const above = Math.min(start.y, end.y, ...span.map((box) => box.top)) - 32;
+        const below = Math.max(start.y, end.y, ...span.map((box) => box.bottom)) + 32;
+        const up = start.y + end.y - 2 * above <= 2 * below - start.y - end.y;
+        dip = up ? claimLane(above, -1, x0, x1) : claimLane(below, 1, x0, x1);
+        routed = true;
+      }
+    }
+    const path = returning ? returnPath(start.x, start.y, end.x, end.y, dip) : routed ? lanePath(start.x, start.y, end.x, end.y, dip) : splinePath(start.x, start.y, end.x, end.y);
     const lx = (start.x + end.x) / 2;
-    const ly = (start.y + end.y) / 2 - (data ? 0 : 10);
+    const ly = returning ? dip : (start.y + end.y) / 2 - (data ? 0 : 10);
     const width = Math.max(34, (edge.label || '').length * 5.8 + 14);
     include(start.x, start.y);
     include(end.x, end.y);
     include(start.x + 48, start.y);
     include(end.x - 48, end.y);
+    if (returning || routed) {
+      include(start.x + 60, dip);
+      include(end.x - 60, dip);
+    }
     if (!data && edge.label) {
       include(lx - width / 2, ly - 12);
       include(lx + width / 2, ly + 12);
     }
     paths.push({ edge, data, path, lx, ly, width, color: data ? pinColor(fromPin) : 'var(--exec)' });
   });
+  laneExtent = lanes.length ? { top: Math.min(...lanes.map((lane) => lane.y)), bottom: Math.max(...lanes.map((lane) => lane.y)) } : null;
   if (linkDrag) {
     const path = splinePath(linkDrag.start.x, linkDrag.start.y, linkDrag.current.x, linkDrag.current.y);
     include(linkDrag.start.x, linkDrag.start.y);
@@ -552,23 +755,32 @@ function drawEdges() {
   svg.style.left = `${minX}px`;
   svg.style.top = `${minY}px`;
   let result = '';
+  const freshOrder = [...stepEdgeKeys];
+  const elapsed = performance.now() - edgeDrawStart;
   paths.forEach((item) => {
     if (item.preview) {
       result += `<path class="edge-spline preview-spline ${item.data ? 'data-spline' : 'execution-spline'}" d="${item.path}" style="--pin:${item.color}" stroke="${item.color}" stroke-width="${item.data ? 2 : 2.6}"/>`;
       return;
     }
     result += `<path class="edge-hit" data-edge="${item.edge.id}" d="${item.path}" stroke-width="18"/>`;
-    result += `<path class="edge-spline ${item.data ? 'data-spline' : 'execution-spline'}" d="${item.path}" style="--pin:${item.color}" stroke="${item.color}" stroke-width="${item.data ? 2 : 2.6}"/>`;
+    const freshIndex = freshOrder.indexOf(item.edge.id);
+    if (freshIndex < 0) {
+      result += `<path class="edge-spline ${item.data ? 'data-spline' : 'execution-spline'}" d="${item.path}" style="--pin:${item.color}" stroke="${item.color}" stroke-width="${item.data ? 2 : 2.6}"/>`;
+    } else {
+      // Arrows are redrawn often; a negative delay resumes the draw-in instead of restarting it.
+      const delay = `${Math.round(300 + freshIndex * 160 - elapsed)}ms`;
+      result += `<path class="edge-spline ${item.data ? 'data-spline' : 'execution-spline'} is-fresh" pathLength="1" d="${item.path}" style="--pin:${item.color};--draw-delay:${delay}" stroke="${item.color}" stroke-width="${item.data ? 2 : 2.6}"/>`;
+      result += `<circle class="edge-pulse" r="${item.data ? 4.5 : 5.5}" fill="${item.color}" style="offset-path:path('${item.path}');--draw-delay:${delay}"/>`;
+    }
     if (!item.data && item.edge.label) result += `<g class="edge-label" data-edge="${item.edge.id}" role="button" tabindex="0" aria-label="Edit connection ${escape(item.edge.label)}"><rect x="${item.lx - item.width / 2}" y="${item.ly - 9}" width="${item.width}" height="18" rx="4"/><text x="${item.lx}" y="${item.ly + 3}" text-anchor="middle" font-size="10">${escape(item.edge.label)}</text></g>`;
   });
   svg.innerHTML = result;
 }
 function nextPosition() {
-  const i = state.cards.length;
   const center = viewportCenter();
-  const worldX = (center.x - state.view.x) / state.view.zoom;
-  const worldY = (center.y - state.view.y) / state.view.zoom;
-  return { x: worldX - 126 + (i % 3) * 28, y: worldY - 64 + Math.floor(i / 3) * 20 };
+  const worldX = (center.x - state.view.x) / state.view.zoom - NODE_W / 2;
+  const worldY = (center.y - state.view.y) / state.view.zoom - 64;
+  return openSpot(worldX, worldY);
 }
 function variableTypeOptions(selected) {
   return dataTypes.map((key) => `<option value="${key}" ${key === canonicalDataType(selected) ? 'selected' : ''}>${variableTypes[key].label}</option>`).join('');
@@ -663,8 +875,8 @@ function connectPins(source, target) {
   if (!out.pin || !inn.pin || out.pin.kind !== inn.pin.kind) return;
   if (state.edges.some((edge) => edge.from === out.card.id && edge.to === inn.card.id && edge.fromPin === out.pin.id && edge.toPin === inn.pin.id)) return;
   checkpoint();
-  if (inn.pin.kind === 'exec') state.edges = state.edges.filter((edge) => !(edge.to === inn.card.id && edge.toPin === inn.pin.id && edge.kind === 'execution'));
-  if (inn.pin.kind === 'data') state.edges = state.edges.filter((edge) => !(edge.to === inn.card.id && edge.toPin === inn.pin.id && edge.kind === 'variable'));
+  // Alternative control paths may converge; a variable input has one source unless it gathers many.
+  if (inn.pin.kind === 'data' && !inn.pin.multi) state.edges = state.edges.filter((edge) => !(edge.to === inn.card.id && edge.toPin === inn.pin.id && edge.kind === 'variable'));
   state.edges.push({
     id: uid(),
     from: out.card.id,
@@ -697,8 +909,8 @@ document.addEventListener('click', (event) => {
     close.closest('dialog').close();
     return;
   }
-  const library = event.target.closest('[data-type]');
-  if (library) return openCard(null, library.dataset.type);
+  const library = event.target.closest('[data-preset]');
+  if (library) return addFromPreset(library.dataset.preset);
   const edge = event.target.closest('[data-edge]');
   if (edge) return openEdge(state.edges.find((item) => item.id === edge.dataset.edge));
   const remove = event.target.closest('[data-remove-edge]');
@@ -773,13 +985,15 @@ $('#card-form').onsubmit = (event) => {
 $('#delete').onclick = () => { checkpoint(); const id = $('#card-id').value; state.cards = state.cards.filter((card) => card.id !== id); state.edges = state.edges.filter((edge) => edge.from !== id && edge.to !== id); $('#editor').close(); render(); };
 $('#edge-form').onsubmit = (event) => { event.preventDefault(); checkpoint(); const edge = { ...pendingEdge, label: $('#edge-label').value.trim(), kind: pendingEdge.kind }; const index = state.edges.findIndex((item) => item.id === edge.id); if (index >= 0) state.edges[index] = edge; $('#edge-editor').close(); render(); };
 $('#delete-edge').onclick = () => { if (!pendingEdge) return; checkpoint(); state.edges = state.edges.filter((item) => item.id !== pendingEdge.id); $('#edge-editor').close(); render(); };
-$('#undo').onclick = () => { if (!history.length) return; const previous = JSON.parse(history.pop()); state.cards = previous.cards; state.edges = previous.edges; state.stage = previous.stage; linkDrag = null; clearHighlights(); render(); };
+$('#undo').onclick = () => { if (!history.length) return; const previous = JSON.parse(history.pop()); state.cards = previous.cards; state.edges = previous.edges; state.stage = previous.stage; linkDrag = null; clearHighlights(); resetStepMarks(); render(); };
 $('#reset').onclick = () => $('#reset-dialog').showModal();
-$('#confirm-reset').onclick = () => { checkpoint(); state = { cards: [], edges: [], stage: 0, view: defaultView(), workshopV3: true, workshopV4: true, workshopV5: true, workshopV6: true, workshopV7: true, workshopV8: true }; linkDrag = null; clearHighlights(); $('#reset-dialog').close(); applyView(); render(); };
+$('#confirm-reset').onclick = () => { checkpoint(); state = { cards: [], edges: [], stage: 0, view: defaultView(), workshopV9: true }; linkDrag = null; clearHighlights(); resetStepMarks(); $('#reset-dialog').close(); applyView({ animate: true }); render(); };
 $('#zoom-in').onclick = () => zoomBy(1.2);
 $('#zoom-out').onclick = () => zoomBy(1 / 1.2);
 $('#zoom-reset').onclick = () => { const center = viewportCenter(); zoomAt(center.x, center.y, 1); };
 $('#zoom-fit').onclick = () => fitView();
+$('#zoom-auto').onclick = () => setAutoCamera(!autoCamera);
+setAutoCamera(autoCamera);
 
 function beginPinch() {
   if (activePointers.size < 2) return;
@@ -844,6 +1058,7 @@ function onPointerMove(event) {
     const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y) || 1;
     const mid = clientToViewport((points[0].x + points[1].x) / 2, (points[0].y + points[1].y) / 2);
     const nextZoom = clamp(pinch.zoom * (dist / pinch.dist), MIN_ZOOM, MAX_ZOOM);
+    setAutoCamera(false);
     state.view.zoom = nextZoom;
     state.view.x = mid.x - pinch.worldX * nextZoom;
     state.view.y = mid.y - pinch.worldY * nextZoom;
@@ -884,6 +1099,7 @@ function onPointerMove(event) {
     if (!canvasPan.moved && Math.hypot(dx, dy) < 3) return;
     canvasPan.moved = true;
     event.preventDefault();
+    setAutoCamera(false);
     state.view.x = canvasPan.originX + dx;
     state.view.y = canvasPan.originY + dy;
     applyView();
@@ -925,12 +1141,13 @@ viewport.addEventListener('wheel', (event) => {
   const deltaY = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
   const zoomGesture = event.ctrlKey || event.metaKey || event.altKey || !deltaX;
   if (!zoomGesture) {
+    setAutoCamera(false);
     state.view.x -= deltaX;
     state.view.y -= deltaY;
     applyView();
     return;
   }
-  zoomAt(point.x, point.y, state.view.zoom * Math.exp(-deltaY * 0.0018));
+  zoomAt(point.x, point.y, state.view.zoom * Math.exp(-deltaY * 0.0018), { animate: false });
 }, { passive: false });
 viewport.addEventListener('dblclick', (event) => {
   if (event.target.closest('.node, button, [data-edge]')) return;
@@ -940,14 +1157,6 @@ viewport.addEventListener('dblclick', (event) => {
   viewport.addEventListener(name, (event) => event.preventDefault());
 });
 
-function card(id, title, type, x, y, body, category, pins) {
-  if (state.cards.some((item) => item.id === id)) return;
-  state.cards.push({ id, title, type, x, y, body, category: category || types[type].category, pins: pins || defaultPins(type) });
-}
-function addNodePin(id, dir, pin) {
-  const item = state.cards.find((cardItem) => cardItem.id === id);
-  if (item) addPin(item, dir, pin);
-}
 function edge(from, to, label = '', kind = 'execution', fromPin, toPin) {
   const fromCard = state.cards.find((cardItem) => cardItem.id === from);
   const toCard = state.cards.find((cardItem) => cardItem.id === to);
@@ -960,194 +1169,205 @@ function edge(from, to, label = '', kind = 'execution', fromPin, toPin) {
   state.edges.push({ id: uid(), from, to, label, kind, fromPin, toPin });
 }
 function unlink(from, to) { state.edges = state.edges.filter((edgeItem) => edgeItem.from !== from || edgeItem.to !== to); }
-function moveCard(id, x, y) {
-  const item = state.cards.find((cardItem) => cardItem.id === id);
-  if (!item) return;
-  item.x = x;
-  item.y = y;
-}
 function setCardText(id, title, body) {
   const item = state.cards.find((cardItem) => cardItem.id === id);
   if (!item) return;
   if (title) item.title = title;
   if (body) item.body = body;
 }
-
+const NODE_W = 252;
+const NODE_H = 220;
+const NODE_GAP = 96;
+let reservedRects = [];
+function cardRect(card) {
+  const node = document.querySelector(`[data-id="${CSS.escape(card.id)}"]`);
+  return { x: card.x, y: card.y, w: node?.offsetWidth || NODE_W, h: node?.offsetHeight || NODE_H };
+}
+function spotBlocked(x, y, w, h, obstacles) {
+  return obstacles.some((box) => x < box.x + box.w + NODE_GAP && x + w + NODE_GAP > box.x && y < box.y + box.h + NODE_GAP && y + h + NODE_GAP > box.y);
+}
+function openSpot(x, y) {
+  const obstacles = [...state.cards.map(cardRect), ...reservedRects];
+  if (!spotBlocked(x, y, NODE_W, NODE_H, obstacles)) return { x, y };
+  const stepX = NODE_W + NODE_GAP;
+  const stepY = NODE_H + NODE_GAP;
+  const prefer = ([dx, dy]) => (dy > 0 ? 0 : dy < 0 ? 2 : 1) * 4 + (dx < 0 ? 1 : 0);
+  for (let radius = 1; radius <= 12; radius += 1) {
+    const ring = [];
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      for (let dy = -radius; dy <= radius; dy += 1) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+        ring.push([dx, dy]);
+      }
+    }
+    ring.sort((a, b) => prefer(a) - prefer(b) || Math.abs(a[0]) + Math.abs(a[1]) - (Math.abs(b[0]) + Math.abs(b[1])));
+    for (const [dx, dy] of ring) {
+      const nx = x + dx * stepX;
+      const ny = y + dy * stepY;
+      if (!spotBlocked(nx, ny, NODE_W, NODE_H, obstacles)) return { x: nx, y: ny };
+    }
+  }
+  let nx = x + stepX * 13;
+  let guard = 0;
+  while (spotBlocked(nx, y, NODE_W, NODE_H, obstacles) && guard < 40) {
+    nx += stepX;
+    guard += 1;
+  }
+  return { x: nx, y };
+}
+function pointBeside(anchorId, direction) {
+  const card = state.cards.find((item) => item.id === anchorId);
+  if (!card) return { x: 40, y: 48 };
+  const rect = cardRect(card);
+  if (direction === 'left') return { x: rect.x - NODE_W - NODE_GAP, y: rect.y };
+  if (direction === 'below') return { x: rect.x, y: rect.y + rect.h + NODE_GAP };
+  if (direction === 'above') return { x: rect.x, y: rect.y - NODE_H - NODE_GAP };
+  return { x: rect.x + rect.w + NODE_GAP, y: rect.y };
+}
+function cardFromPreset(preset, id, { x, y }) {
+  return { id, title: preset.title, body: preset.body, type: preset.type, category: types[preset.type].category, x, y, pins: JSON.parse(JSON.stringify(preset.pins)) };
+}
+function place(id, presetId, x, y) {
+  const preset = lessonPresetById[presetId];
+  if (!preset || state.cards.some((item) => item.id === id)) return;
+  state.cards.push(cardFromPreset(preset, id, openSpot(x, y)));
+}
+function insertBefore(id, presetId, targetId) {
+  const target = state.cards.find((item) => item.id === targetId);
+  const preset = lessonPresetById[presetId];
+  if (!target || !preset || state.cards.some((item) => item.id === id)) return;
+  state.cards.push(cardFromPreset(preset, id, target));
+  target.x += NODE_W + NODE_GAP;
+}
+function placeReturning(id, presetId, anchorId) {
+  const origin = pointBeside(anchorId, 'right');
+  place(id, presetId, origin.x + NODE_GAP, origin.y + Math.round(NODE_H * 0.6));
+}
+function placeNext(id, presetId, anchorId, direction) {
+  const origin = pointBeside(anchorId, direction);
+  place(id, presetId, origin.x, origin.y);
+}
+function flowLayout() {
+  const byId = new Map(state.cards.map((card) => [card.id, card]));
+  const isFlow = (card) => (card.category || types[card.type]?.category) === 'execution';
+  const forward = state.edges.filter((item) => item.kind === 'execution' && item.toPin !== 'again');
+  const produced = state.edges.filter((item) => item.kind === 'variable' && byId.has(item.from) && byId.has(item.to) && isFlow(byId.get(item.from)) && !isFlow(byId.get(item.to)) && byId.get(item.to).type !== 'task');
+  const margin = 12;
+  for (let pass = 0; pass < 80; pass += 1) {
+    let moved = false;
+    for (const item of forward) {
+      const from = byId.get(item.from);
+      const to = byId.get(item.to);
+      if (!from || !to) continue;
+      const min = from.x + cardRect(from).w + NODE_GAP;
+      if (to.x < min) { to.x = min; moved = true; }
+    }
+    for (const item of produced) {
+      const from = byId.get(item.from);
+      const to = byId.get(item.to);
+      if (to.x < from.x) { to.x = from.x; moved = true; }
+    }
+    const sorted = [...state.cards].sort((a, b) => a.x - b.x || a.y - b.y);
+    for (let i = 0; i < sorted.length; i += 1) {
+      const a = cardRect(sorted[i]);
+      for (let j = i + 1; j < sorted.length; j += 1) {
+        const b = cardRect(sorted[j]);
+        if (a.x < b.x + b.w + margin && a.x + a.w + margin > b.x && a.y < b.y + b.h + margin && a.y + a.h + margin > b.y) {
+          sorted[j].x = a.x + a.w + NODE_GAP;
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+}
+function removeCard(id) {
+  const item = state.cards.find((card) => card.id === id);
+  if (item) reservedRects.push(cardRect(item));
+  state.cards = state.cards.filter((card) => card.id !== id);
+  state.edges = state.edges.filter((edgeItem) => edgeItem.from !== id && edgeItem.to !== id);
+}
+function edgeStructuralKey(item) {
+  return [item.kind, item.from, item.fromPin, item.to, item.toPin, item.label || ''].join('|');
+}
+function edgeTouch(edges, id) {
+  return edges.filter((item) => item.from === id || item.to === id).map(edgeStructuralKey).sort().join('~');
+}
+function resetStepMarks() {
+  clearTimeout(stepMarkTimer);
+  stepMarks = { added: new Set(), changed: new Set() };
+  stepEdgeKeys = new Set();
+  removedGhosts = [];
+  reservedRects = [];
+  stepNote = '';
+  document.querySelectorAll('.node.is-added, .node.is-changed').forEach((node) => {
+    node.classList.remove('is-added', 'is-changed');
+    node.querySelector('.node-badge')?.remove();
+  });
+  document.querySelectorAll('.node.is-removed').forEach((node) => node.remove());
+  document.querySelectorAll('#arrows .is-fresh').forEach((path) => path.classList.remove('is-fresh'));
+  if (!linkDrag && $('#connection-hint')) {
+    $('#connection-hint').classList.remove('is-step-note');
+    $('#connection-hint').textContent = 'Drag ▷ for control flow · Drag ● to pass a variable';
+  }
+}
+function publishStepChange(before) {
+  const beforeIds = new Set(before.cards.map((card) => card.id));
+  const afterIds = new Set(state.cards.map((card) => card.id));
+  const added = state.cards.filter((card) => !beforeIds.has(card.id)).map((card) => card.id);
+  const removed = before.cards.filter((card) => !afterIds.has(card.id));
+  const changed = state.cards.filter((card) => {
+    if (!beforeIds.has(card.id)) return false;
+    const previous = before.cards.find((item) => item.id === card.id);
+    return previous.x !== card.x || previous.y !== card.y || previous.title !== card.title || previous.body !== card.body || edgeTouch(before.edges, card.id) !== edgeTouch(state.edges, card.id);
+  }).map((card) => card.id);
+  const unchanged = state.cards.length - added.length - changed.length;
+  const previousKeys = new Set(before.edges.map(edgeStructuralKey));
+  stepMarks = { added: new Set(added), changed: new Set(changed) };
+  stepEdgeKeys = new Set(state.edges.filter((item) => !previousKeys.has(edgeStructuralKey(item))).map((item) => item.id));
+  const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  movedFrom = new Map();
+  if (!reduced) {
+    state.cards.forEach((card) => {
+      const previous = before.cards.find((item) => item.id === card.id);
+      if (previous && (previous.x !== card.x || previous.y !== card.y)) movedFrom.set(card.id, { dx: previous.x - card.x, dy: previous.y - card.y });
+    });
+  }
+  moveStart = performance.now();
+  phaseDelay = movedFrom.size ? MOVE_MS : 0;
+  edgeDrawStart = moveStart + phaseDelay;
+  removedGhosts = removed;
+  const part = (count, label) => `<span class="delta delta-${label}">${count} ${label}</span>`;
+  stepNote = `${part(added.length, 'added')} ${part(changed.length, 'changed')} ${part(removed.length, 'removed')} ${part(unchanged, 'unchanged')}`;
+  pendingPan = true;
+  clearTimeout(stepMarkTimer);
+  stepMarkTimer = setTimeout(resetStepMarks, 3200 + phaseDelay);
+  render();
+}
+function addFromPreset(presetId) {
+  const preset = presetById[presetId];
+  if (!preset) return;
+  checkpoint();
+  state.cards.push(cardFromPreset(preset, uid(), nextPosition()));
+  render();
+}
 $('#next').onclick = () => {
   if (state.stage >= LAST_STAGE) return;
-  checkpoint(); state.stage += 1;
-  switch (state.stage) {
-    case 1:
-      card('task', 'Task', 'task', 50, 80, 'What should be done.', 'data', {
-        inputs: [],
-        outputs: [{ id: 'task', kind: 'data', name: 'Task', dataType: 'task' }],
-      });
-      card('agent', 'Complete this task', 'agent', 360, 80, 'The task is given to the agent. That is the whole system.', 'execution', {
-        inputs: [
-          { id: 'exec', kind: 'exec', name: '' },
-          { id: 'task', kind: 'data', name: 'Task', dataType: 'task' },
-        ],
-        outputs: [{ id: 'exec', kind: 'exec', name: '' }],
-      });
-      edge('task', 'agent', '', 'variable', 'task', 'task');
-      break;
-    case 2:
-      moveCard('agent', 680, 80);
-      addNodePin('agent', 'in', { id: 'ask', kind: 'data', name: 'Ask', dataType: 'context' });
-      setCardText('agent', 'Complete this task', 'The agent now hears the ask from a terminal, not the task itself.');
-      card('person', 'A person', 'human', 360, 80, 'Takes the task and types the ask in a terminal.', 'execution', {
-        inputs: [
-          { id: 'exec', kind: 'exec', name: '' },
-          { id: 'task', kind: 'data', name: 'Task', dataType: 'task' },
-        ],
-        outputs: [
-          { id: 'exec', kind: 'exec', name: '' },
-          { id: 'ask', kind: 'data', name: 'Ask', dataType: 'context' },
-        ],
-      });
-      card('terminal', 'Terminal', 'context', 360, 280, 'Complete this task.', 'data', {
-        inputs: [{ id: 'ask', kind: 'data', name: 'Ask', dataType: 'context' }],
-        outputs: [{ id: 'ask-out', kind: 'data', name: 'Ask', dataType: 'context' }],
-      });
-      unlink('task', 'agent');
-      edge('task', 'person', '', 'variable', 'task', 'task');
-      edge('person', 'agent', '', 'execution', 'exec', 'exec');
-      edge('person', 'terminal', '', 'variable', 'ask', 'ask');
-      edge('terminal', 'agent', '', 'variable', 'ask-out', 'ask');
-      break;
-    case 3:
-      moveCard('person', 360, 340);
-      moveCard('terminal', 680, 340);
-      card('start', 'When a task is waiting', 'trigger', 50, 260, 'The same work begins without anyone opening a terminal.', 'execution');
-      setCardText('agent', 'Complete this task', 'The task reaches the agent on its own. A person no longer has to type the ask.');
-      unlink('person', 'agent');
-      unlink('terminal', 'agent');
-      unlink('task', 'person');
-      edge('start', 'agent', '', 'execution', 'exec', 'exec');
-      edge('task', 'agent', '', 'variable', 'task', 'task');
-      break;
-    case 4:
-      moveCard('person', 50, 560);
-      moveCard('terminal', 340, 560);
-      setCardText('agent', 'Implementation', 'One writable turn. Leaves a local commit and does not inspect the diff.');
-      addNodePin('agent', 'out', { id: 'committed', kind: 'exec', name: 'Committed' });
-      addNodePin('agent', 'out', { id: 'commit', kind: 'data', name: 'Local commit', dataType: 'context' });
-      card('simplify', 'Clean up and simplify', 'agent', 1020, 80, 'A fresh agent. No memory of the last turn. Amends the same commit and pushes.', 'execution', {
-        inputs: [
-          { id: 'exec', kind: 'exec', name: '' },
-          { id: 'commit', kind: 'data', name: 'Local commit', dataType: 'context' },
-        ],
-        outputs: [
-          { id: 'exec', kind: 'exec', name: 'Pushed' },
-          { id: 'pushed', kind: 'data', name: 'Pushed commit', dataType: 'context' },
-        ],
-      });
-      card('commit', 'Local commit', 'context', 680, 280, 'The attempt’s commit. Cleanup amends this.');
-      card('pushed', 'Pushed commit', 'context', 1020, 280, 'What review and tests will judge.');
-      edge('agent', 'simplify', 'Committed', 'execution', 'committed', 'exec');
-      edge('agent', 'commit', '', 'variable', 'commit', 'value');
-      edge('commit', 'simplify', '', 'variable', 'value-out', 'commit');
-      edge('simplify', 'pushed', '', 'variable', 'pushed', 'value');
-      break;
-    case 5:
-      card('reviewer', 'Code review', 'agent', 1360, 80, 'A fresh read of the pushed commit.', 'execution', {
-        inputs: [
-          { id: 'exec', kind: 'exec', name: '' },
-          { id: 'commit', kind: 'data', name: 'Pushed commit', dataType: 'context' },
-        ],
-        outputs: [
-          { id: 'clear', kind: 'exec', name: 'Clear' },
-          { id: 'reject', kind: 'exec', name: 'Rejected' },
-          { id: 'findings', kind: 'data', name: 'Findings', dataType: 'feedback' },
-        ],
-      });
-      card('tests', 'Run tests after the change', 'agent', 1700, 80, 'The suite with and without the change. A failure rejects the attempt.', 'execution', {
-        inputs: [
-          { id: 'exec', kind: 'exec', name: '' },
-          { id: 'commit', kind: 'data', name: 'Pushed commit', dataType: 'context' },
-        ],
-        outputs: [
-          { id: 'passed', kind: 'exec', name: 'Passed' },
-          { id: 'failed', kind: 'exec', name: 'Failed' },
-          { id: 'report', kind: 'data', name: 'Failure report', dataType: 'feedback' },
-        ],
-      });
-      card('ready', 'Mark it ready', 'agent', 2040, 80, 'Tests passed. A person can take it.', 'execution', {
-        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
-        outputs: [{ id: 'exec', kind: 'exec', name: '' }],
-      });
-      card('human', 'Review and merge', 'human', 2380, 80, 'A person reads the final diff and evidence, then merges.', 'execution', {
-        inputs: [
-          { id: 'exec', kind: 'exec', name: '' },
-          { id: 'draft', kind: 'data', name: 'Draft change', dataType: 'context' },
-        ],
-        outputs: [],
-      });
-      card('draft', 'Draft change', 'context', 2040, 280, 'Stays a draft until it is ready.');
-      edge('simplify', 'reviewer', 'Pushed', 'execution', 'exec', 'exec');
-      edge('pushed', 'reviewer', '', 'variable', 'value-out', 'commit');
-      edge('pushed', 'tests', '', 'variable', 'value-out', 'commit');
-      edge('reviewer', 'tests', 'Clear', 'execution', 'clear', 'exec');
-      edge('tests', 'ready', 'Passed', 'execution', 'passed', 'exec');
-      edge('ready', 'human', 'Ready', 'execution', 'exec', 'exec');
-      edge('draft', 'human', '', 'variable', 'value-out', 'draft');
-      break;
-    case 6:
-      card('feedback', 'Problems', 'feedback', 1360, 280, 'Findings and failures go into the next attempt.', 'data', {
-        inputs: [
-          { id: 'findings', kind: 'data', name: 'Findings', dataType: 'feedback' },
-          { id: 'report', kind: 'data', name: 'Failure report', dataType: 'feedback' },
-        ],
-        outputs: [{ id: 'value-out', kind: 'data', name: 'Problems', dataType: 'feedback' }],
-      });
-      addNodePin('agent', 'in', { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' });
-      addNodePin('agent', 'in', { id: 'retry', kind: 'exec', name: 'Again' });
-      edge('reviewer', 'feedback', '', 'variable', 'findings', 'findings');
-      edge('tests', 'feedback', '', 'variable', 'report', 'report');
-      edge('feedback', 'agent', '', 'variable', 'value-out', 'problems');
-      edge('reviewer', 'agent', 'Rejected', 'execution', 'reject', 'retry');
-      edge('tests', 'agent', 'Rejected', 'execution', 'failed', 'retry');
-      break;
-    case 7:
-      addNodePin('agent', 'out', { id: 'needinfo', kind: 'exec', name: 'Questions' });
-      addNodePin('agent', 'out', { id: 'empty', kind: 'exec', name: 'Empty' });
-      card('questions', 'Stop: questions', 'human', 680, 480, 'The run stops. Questions stay with the task.', 'execution', {
-        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
-        outputs: [],
-      });
-      card('empty', 'Stop: nothing shipped', 'agent', 1020, 480, 'The agent gave up or changed nothing.', 'execution', {
-        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
-        outputs: [],
-      });
-      edge('agent', 'questions', 'Questions', 'execution', 'needinfo', 'exec');
-      edge('agent', 'empty', 'Gave up', 'execution', 'empty', 'exec');
-      break;
-    case 8:
-      card('budget', 'Tries and time left?', 'agent', 1700, 280, 'A few attempts. Another try also needs time left.', 'execution', {
-        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
-        outputs: [
-          { id: 'yes', kind: 'exec', name: 'Yes' },
-          { id: 'no', kind: 'exec', name: 'No' },
-        ],
-      });
-      card('leftover', 'Stop: leave the draft', 'agent', 1700, 480, 'No attempt left. The last commit stays a draft.', 'execution', {
-        inputs: [{ id: 'exec', kind: 'exec', name: '' }],
-        outputs: [],
-      });
-      unlink('reviewer', 'agent');
-      unlink('tests', 'agent');
-      edge('reviewer', 'budget', 'Rejected', 'execution', 'reject', 'exec');
-      edge('tests', 'budget', 'Rejected', 'execution', 'failed', 'exec');
-      edge('budget', 'agent', 'Try again', 'execution', 'yes', 'retry');
-      edge('budget', 'leftover', 'No', 'execution', 'no', 'exec');
-      break;
-  }
-  render();
-  requestAnimationFrame(() => revealContent());
+  checkpoint();
+  reservedRects = [];
+  const before = {
+    cards: state.cards.map((card) => ({ id: card.id, title: card.title, body: card.body, type: card.type, category: card.category, x: card.x, y: card.y })),
+    edges: state.edges.map((item) => ({ from: item.from, to: item.to, fromPin: item.fromPin, toPin: item.toPin, kind: item.kind, label: item.label || '' })),
+  };
+  state.stage += 1;
+  lessonSteps[state.stage][3]?.();
+  flowLayout();
+  publishStepChange(before);
 };
-$('#export').onclick = () => { const blob = new Blob([JSON.stringify({ format: 'ship-loop-blueprint-v2', ...state }, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'ship-loop-blueprint.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
-new ResizeObserver(() => { applyView(); drawEdges(); }).observe(viewport);
-window.addEventListener('resize', () => { applyView(); drawEdges(); });
+
+$('#export').onclick = () => ShipLoopExportUI.open(state);
+new ResizeObserver(() => { paintView(); drawEdges(); }).observe(viewport);
+window.addEventListener('resize', () => { paintView(); drawEdges(); });
 applyView({ animate: false });
 render();
 
