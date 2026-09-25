@@ -15,7 +15,7 @@ Committed changes on `main` publish automatically to GitHub Pages from `docs/`.
 
 ## Reusable blocks
 
-The left column is a shared library for company and scenario templates. Search by purpose, then edit the block's text, inputs, and outputs. Workflow blocks are **Start on an event** (a trigger), **Agent**, and **Human**. Variables are **Task** and **Context**; rename a Context block for what it holds, such as "Metrics Report".
+The left column is a shared library for company and scenario templates; collapse it with **«** to give the board more room. Search by purpose, then edit the block's text, inputs, and outputs. Workflow blocks are **Start on an event** (a trigger), **Agent**, and **Human**. Variables are **Task** and **Context**; rename a Context block for what it holds, such as "Metrics Report".
 
 For example, a content team can connect trigger → draft → review, sending review feedback back to the draft for another attempt. These are starting points: each team supplies its own criteria, tools, and ownership.
 

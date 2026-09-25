@@ -42,25 +42,30 @@
 </header>
 
 <main>
-  <aside>
-    <h2>Blocks</h2>
-    <p class="palette-description">Building blocks for your team's workflow. Add a block, then edit it for your scenario.</p>
-    <label class="block-search-label" for="block-search">Find a block
-      <input id="block-search" type="search" placeholder="Search blocks…" autocomplete="off">
-    </label>
-    <p id="palette-count" role="status" aria-live="polite"></p>
-    <p id="palette-empty" hidden>No matching blocks. Try a different search.</p>
-    <div class="palette-group" id="flow-group">
-      <div class="palette-label">Workflow</div>
-      <div id="flow-library"></div>
+  <aside id="palette">
+    <div class="palette-head">
+      <h2>Blocks</h2>
+      <button id="palette-toggle" type="button" aria-controls="palette-body" aria-expanded="true" aria-label="Collapse blocks panel" title="Collapse blocks panel">«</button>
     </div>
-    <div class="palette-group" id="data-group">
-      <div class="palette-label">Variables</div>
-      <div id="data-library"></div>
-    </div>
-    <div class="legend">
-      <span class="exec-line">▷ Control flow</span>
-      <span class="data-line">● Variables</span>
+    <div id="palette-body">
+      <p class="palette-description">Building blocks for your team's workflow. Add a block, then edit it for your scenario.</p>
+      <label class="block-search-label" for="block-search">Find a block
+        <input id="block-search" type="search" placeholder="Search blocks…" autocomplete="off">
+      </label>
+      <p id="palette-count" role="status" aria-live="polite"></p>
+      <p id="palette-empty" hidden>No matching blocks. Try a different search.</p>
+      <div class="palette-group" id="flow-group">
+        <div class="palette-label">Workflow</div>
+        <div id="flow-library"></div>
+      </div>
+      <div class="palette-group" id="data-group">
+        <div class="palette-label">Variables</div>
+        <div id="data-library"></div>
+      </div>
+      <div class="legend">
+        <span class="exec-line">▷ Control flow</span>
+        <span class="data-line">● Variables</span>
+      </div>
     </div>
   </aside>
 

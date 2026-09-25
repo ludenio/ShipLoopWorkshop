@@ -1375,3 +1375,20 @@ render();
 function updateThemeButton() { const dark = document.documentElement.dataset.theme === 'dark'; $('#theme-toggle').textContent = dark ? '☼ Light' : '☾ Dark'; $('#theme-toggle').setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme'); }
 $('#theme-toggle').onclick = () => { const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = theme; try { localStorage.setItem('ship-loop-theme', theme); } catch {} updateThemeButton(); };
 updateThemeButton();
+
+function setPaletteCollapsed(collapsed) {
+  $('#palette').classList.toggle('collapsed', collapsed);
+  const label = collapsed ? 'Expand blocks panel' : 'Collapse blocks panel';
+  $('#palette-toggle').textContent = collapsed ? '»' : '«';
+  $('#palette-toggle').setAttribute('aria-expanded', String(!collapsed));
+  $('#palette-toggle').setAttribute('aria-label', label);
+  $('#palette-toggle').title = label;
+}
+$('#palette-toggle').onclick = () => {
+  const collapsed = !$('#palette').classList.contains('collapsed');
+  setPaletteCollapsed(collapsed);
+  try { localStorage.setItem('ship-loop-palette', collapsed ? 'collapsed' : 'open'); } catch {}
+};
+let paletteCollapsed = false;
+try { paletteCollapsed = localStorage.getItem('ship-loop-palette') === 'collapsed'; } catch {}
+setPaletteCollapsed(paletteCollapsed);
