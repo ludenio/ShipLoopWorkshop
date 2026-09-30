@@ -124,7 +124,7 @@ test('guided example retains valid connections through every step, including hum
     if (stage >= 11) {
       assert.ok(hasEdge('created', 'exec', 'baseline', 'exec'));
       assert.equal(hasEdge('created', 'exec', 'classify', 'exec'), false);
-      if (stage <= 14) {
+      if (stage <= 15) {
         assert.equal(cards.has('classify'), false);
         assert.ok(hasEdge('baseline', 'passed', 'implement', 'exec'));
       } else {
@@ -133,8 +133,8 @@ test('guided example retains valid connections through every step, including hum
         assert.ok(cards.get('baseline').x < cards.get('classify').x);
       }
       if (stage >= 12) assert.ok(hasEdge('baseline', 'failed', 'needhuman', 'exec'));
-      if (stage >= 16) assert.ok(hasEdge('classify', 'unclear', 'needhuman', 'exec'));
-      if (stage === 15) assert.equal(hasEdge('classify', 'unclear', 'needhuman', 'exec'), false, 'reveal the unclear branch separately');
+      if (stage >= 17) assert.ok(hasEdge('classify', 'unclear', 'needhuman', 'exec'));
+      if (stage === 16) assert.equal(hasEdge('classify', 'unclear', 'needhuman', 'exec'), false, 'reveal the unclear branch separately');
     }
     if (stage === 13) {
       assert.equal(cards.has('classify'), false, 'introduce both test runs before classification');
@@ -143,6 +143,7 @@ test('guided example retains valid connections through every step, including hum
       assert.ok(hasEdge('tests', 'passed', 'pr', 'exec'));
     }
     assert.equal(hasEdge('tests', 'failed', 'implement', 'again'), stage >= 14, 'reveal the failed retry immediately after the second test run');
+    assert.equal(hasEdge('tests', 'report', 'implement', 'context'), stage >= 15, 'reveal the failure report immediately after the failed retry');
     if (cards.has('doctor')) {
       assert.ok(hasEdge('pr', 'exec', 'doctor', 'exec'));
       assert.equal(hasEdge('humanreview', 'merged', 'doctor', 'exec'), false);

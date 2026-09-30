@@ -91,8 +91,11 @@ const lessonSteps = [
   ['Tests run before the work', 'Insert the first Run Auto Tests after Task Created. Passed: continue to Agent Implementation. Nothing handles a broken baseline yet.', 'Handle failed baseline tests →', addBaselineTests],
   ['Failed baseline tests go to Need Human', 'If the first Run Auto Tests fails, the project is already broken. Its Failed branch goes to Need Human and stops the run so a person can take over. Passing tests continue to Agent Implementation.', 'Add the second test run →', addBaselineFailure],
   ['Tests run again after the work', 'Insert a second test run between Agent Implementation and Create Draft Pull Request. Passed: the changes become a draft PR. Failed: nothing handles the failure yet.', 'Send test failures back →', addPostImplementationTests],
-  ['Failed tests go back to Agent Implementation', 'When the tests after the work fail, control returns to Agent Implementation for another attempt. It does not know what broke yet.', 'Classify the task →', () => {
+  ['Failed tests go back to Agent Implementation', 'When the tests after the work fail, control returns to Agent Implementation for another attempt. It does not know what broke yet.', 'Pass the failure report →', () => {
     edge('tests', 'implement', 'Failed', 'execution', 'failed', 'again');
+  }],
+  ['The failure report joins the Context', 'The failure report goes into Agent Implementation’s Context, so the next attempt knows what broke. A passing run continues to the draft PR and the same human reviewer. Before implementation, we still need to check whether the task is clear.', 'Classify the task →', () => {
+    edge('tests', 'implement', '', 'variable', 'report', 'context');
   }],
   ['Classify the task', 'After the baseline tests pass, classify the task. A clear task, obvious how to proceed, goes to Agent Implementation. Failed baseline tests already go to Need Human; nothing handles an unclear task yet.', 'Hand problems to a person →', () => {
     unlink('baseline', 'implement');
@@ -101,11 +104,8 @@ const lessonSteps = [
     edge('created', 'classify', '', 'variable', 'task', 'context');
     edge('classify', 'implement', 'Clear', 'execution', 'clear', 'exec');
   }],
-  ['Unclear tasks also go to Need Human', 'An unclear task now joins the same Need Human action used by failed baseline tests. A person handles missing information or a broken project. Failed tests return to Agent Implementation, but the failure report is not passed back yet.', 'Pass the failure report →', () => {
+  ['Unclear tasks also go to Need Human', 'An unclear task now joins the same Need Human action used by failed baseline tests. A person handles missing information or a broken project. Failed tests return to Agent Implementation with their failure report. The PR still lacks an explanation of the change.', 'Explain the changes →', () => {
     edge('classify', 'needhuman', 'Unclear', 'execution', 'unclear', 'exec');
-  }],
-  ['The failure report joins the Context', 'The failure report goes into Agent Implementation’s Context, so the next attempt knows what broke. A passing run continues to the draft PR and the same human reviewer. The PR still lacks an explanation of the change.', 'Explain the changes →', () => {
-    edge('tests', 'implement', '', 'variable', 'report', 'context');
   }],
   ['Explain describes the change', 'Before the pull request opens, Explain reads the original task and the changes. It writes a clear report: what was fixed, how to reproduce the original issue, and how to test the fix. The report goes into the pull request for testers, reviewers, developers, and whoever merges it. Nobody reviews the changes before the tests.', 'Review the changes →', () => {
     unlink('tests', 'pr');
