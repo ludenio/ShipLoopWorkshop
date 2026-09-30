@@ -10,33 +10,42 @@ const types = {
   task: { icon: '▣', label: 'Task', category: 'data' },
 };
 const dataTypes = ['context', 'feedback', 'task'];
-const TYPE_ALIASES = { artifact: 'context', text: 'context', review: 'feedback', prompt: 'agent', action: 'agent' };
-const DATA_ALIASES = { artifact: 'context', text: 'context', review: 'feedback', bool: 'context', issue: 'task' };
 const variableTypes = {
   context: { label: 'Context', color: 'var(--context)' },
   feedback: { label: 'Feedback', color: 'var(--feedback)' },
   task: { label: 'Task', color: 'var(--task)' },
-  artifact: { label: 'Context', color: 'var(--context)' },
-  review: { label: 'Feedback', color: 'var(--feedback)' },
-  text: { label: 'Context', color: 'var(--context)' },
-  bool: { label: 'Context', color: 'var(--context)' },
-  issue: { label: 'Task', color: 'var(--task)' },
 };
-const canonicalType = (type) => TYPE_ALIASES[type] || type;
-const canonicalDataType = (type) => DATA_ALIASES[type] || type;
 // The guided software-delivery example keeps its own steps and pin contracts.
 // The palette below is shared by company- and scenario-specific templates.
+function implementationPreset(type) {
+  const human = type === 'human';
+  const actor = human ? 'A person' : 'An agent';
+  return {
+    id: human ? 'implementation' : 'agent-implementation', group: 'flow', type,
+    title: human ? 'Human Implementation' : 'Agent Implementation',
+    hint: `${actor} solves the task`,
+    body: `${actor} solves the task using the supplied Context and hands over the changes.`,
+    pins: {
+      inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'again', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }],
+      outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'changes', kind: 'data', name: 'Changes', dataType: 'context' }, { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' }],
+    },
+  };
+}
 const lessonPresets = [
-  { id: 'person', group: 'flow', type: 'human', title: 'A person', hint: 'Starts the agent', body: 'Starts the agent and asks it to solve the task.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }] } },
-  { id: 'implementation', group: 'flow', type: 'agent', title: 'Implement', hint: 'Solve the task', body: 'Solve the task it is given and hand over the changes.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'again', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'changes', kind: 'data', name: 'Changes', dataType: 'context' }, { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' }] } },
+  implementationPreset('human'),
+  implementationPreset('agent'),
   { id: 'task-created', group: 'flow', type: 'trigger', title: 'Task Created', hint: 'Carries the task', body: 'A task was created. It starts the run and hands the task on.', pins: { inputs: [{ id: 'again', kind: 'exec', name: '' }, { id: 'task', kind: 'data', name: 'Task', dataType: 'task', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'task', kind: 'data', name: 'Task', dataType: 'task' }] } },
+  { id: 'task-updated', group: 'flow', type: 'trigger', title: 'Task Updated', hint: 'Restart from the PR comment', body: 'The requested changes were posted as a comment on the PR. Use that Changes Request to update the existing task, then restart the same loop with the feedback and draft pull request.', pins: { inputs: [{ id: 'again', kind: 'exec', name: '' }, { id: 'task', kind: 'data', name: 'Changes Request', dataType: 'task', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'task', kind: 'data', name: 'Task', dataType: 'task' }] } },
   { id: 'classify', group: 'flow', type: 'agent', title: 'Classify the Task', hint: 'Clear or unclear', body: 'Clear, and obvious how to proceed: continue. Unclear: hand it to a person.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'clear', kind: 'exec', name: 'Clear' }, { id: 'unclear', kind: 'exec', name: 'Unclear' }] } },
   { id: 'need-human', group: 'flow', type: 'human', title: 'Need Human', hint: 'Execution stops', body: 'Work cannot continue: information is missing, or the project is already broken. A person takes over.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [] } },
   { id: 'run-tests', group: 'flow', type: 'agent', title: 'Run Auto Tests', hint: 'Before or after the change', body: 'Run the test suite. Report whether it passed and what failed.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'passed', kind: 'exec', name: 'Passed' }, { id: 'failed', kind: 'exec', name: 'Failed' }, { id: 'report', kind: 'data', name: 'Failure report', dataType: 'feedback' }] } },
-  { id: 'pull-request', group: 'flow', type: 'agent', title: 'Create Pull Request', hint: 'Tests passed', body: 'The tests passed. Open a pull request with the changes.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'pr', kind: 'data', name: 'Pull Request', dataType: 'context' }] } },
+  { id: 'pull-request', group: 'flow', type: 'human', title: 'Create Draft Pull Request', hint: 'The requester creates the PR', body: 'After implementation finishes, the requester creates a draft pull request with the changes for subsequent review.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'pr', kind: 'data', name: 'Draft Pull Request', dataType: 'context' }] } },
+  { id: 'human-review', group: 'flow', type: 'human', title: 'Human Review', executionMode: 'independent', hint: 'Approved or asked for changes', body: 'The requester reviews the draft independently. The main loop continues without waiting. Choose Approved to merge the PR, or Asked for changes to post specific feedback as a comment on the PR.', pins: { inputs: [{ id: 'pr', kind: 'data', name: 'Draft Pull Request', dataType: 'context' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'merged', kind: 'exec', name: 'Approved' }, { id: 'changes', kind: 'exec', name: 'Asked for changes' }, { id: 'task', kind: 'data', name: 'Changes Request', dataType: 'task' }] } },
+  { id: 'merge-pr', group: 'flow', type: 'human', title: 'Merge PR', hint: 'After human approval', body: 'The requester marks the approved draft ready and merges the PR. This finishes the review branch; the main loop does not wait for the merge.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'pr', kind: 'data', name: 'Draft Pull Request', dataType: 'context' }], outputs: [] } },
+  { id: 'comment-pr', group: 'flow', type: 'human', title: 'Comment on PR', hint: 'After changes are requested', body: 'Post the requested changes as a comment on the PR, with specific feedback for the next attempt. Output a Changes Request containing the comment reference, existing task, and draft pull request.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'pr', kind: 'data', name: 'Draft Pull Request', dataType: 'context' }, { id: 'task', kind: 'data', name: 'Changes Request', dataType: 'task' }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'task', kind: 'data', name: 'Changes Request', dataType: 'task' }] } },
   { id: 'explainer', group: 'flow', type: 'agent', title: 'Explain', hint: 'Explains the change', body: 'Writes a human-readable report: what was fixed, how to reproduce the original issue, and how to test the fix.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Explanation', dataType: 'context' }] } },
   { id: 'cleanup', group: 'flow', type: 'agent', title: 'Clean Up', hint: 'Simplify changes', body: 'Simplify changes.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'changes', kind: 'data', name: 'Changes', dataType: 'context' }, { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' }] } },
-  { id: 'review', group: 'flow', type: 'agent', title: 'Code Review', hint: 'Approve or reject', body: 'Review the changes. Approve them, or send them back to Implement.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'approved', kind: 'exec', name: 'Approved' }, { id: 'rejected', kind: 'exec', name: 'Rejected' }, { id: 'changes', kind: 'data', name: 'Changes', dataType: 'context' }, { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' }] } },
+  { id: 'review', group: 'flow', type: 'agent', title: 'Code Review', hint: 'Approve or reject', body: 'Review the changes. Approve them, or send them back to Agent Implementation.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'approved', kind: 'exec', name: 'Approved' }, { id: 'rejected', kind: 'exec', name: 'Rejected' }, { id: 'changes', kind: 'data', name: 'Changes', dataType: 'context' }, { id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback' }] } },
   { id: 'doctor', group: 'flow', type: 'agent', title: 'Doctor', hint: 'Report in, task out', body: 'Reads the Problems Report and writes a new task that fixes what went wrong.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'context', kind: 'data', name: 'Context', dataType: 'context', multi: true }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'task', kind: 'data', name: 'New task', dataType: 'task' }] } },
   { id: 'second-opinion', group: 'flow', type: 'agent', title: 'Bro', hint: 'Any agent can ask', body: 'An independent agent any other agent can consult before it commits to a decision.', pins: { inputs: [], outputs: [{ id: 'opinion', kind: 'data', name: 'Opinion', dataType: 'context' }] } },
   { id: 'player-report', group: 'flow', type: 'human', title: 'Player Report', hint: 'A player reports an issue', body: 'A player reports an issue with logs, screenshots, or a written description.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Report', dataType: 'feedback' }] } },
@@ -45,9 +54,9 @@ const lessonPresets = [
   { id: 'after-playtest', group: 'flow', type: 'agent', title: 'Auto Playtest', hint: 'An agent plays the game', body: 'Play the game through Automation Bridge, which lets the agent interact with the game, then write a Playtest Report.', pins: { inputs: [{ id: 'exec', kind: 'exec', name: '' }], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Playtest report', dataType: 'feedback' }] } },
   { id: 'qa-report', group: 'flow', type: 'human', title: 'QA Report', hint: 'Testers file bugs', body: 'Testers play the game and file bugs with reproduction steps and other relevant details.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Report', dataType: 'feedback' }] } },
   { id: 'human-playtest', group: 'flow', type: 'human', title: 'Human Playtest', hint: 'People play the game', body: 'People play the game and write a Playtest Report.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }, { id: 'report', kind: 'data', name: 'Playtest report', dataType: 'feedback' }] } },
-  { id: 'cron', group: 'flow', type: 'trigger', title: 'Cron', hint: 'Every day at 4:00 a.m.', body: 'Starts Auto Playtest every day at 4:00 a.m.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }] } },
-  { id: 'task', group: 'data', type: 'task', title: 'Task', hint: 'The work to solve', body: 'The task already exists. Pass it to the agent as the work to solve.', pins: { inputs: [{ id: 'task', kind: 'data', name: 'Task', dataType: 'task', multi: true }], outputs: [{ id: 'task', kind: 'data', name: 'Task', dataType: 'task' }] } },
-  { id: 'pull-request-var', group: 'data', type: 'context', title: 'Pull Request', hint: 'The result of the run', body: 'The pull request with the changes.', pins: { inputs: [{ id: 'pr', kind: 'data', name: 'Pull Request', dataType: 'context' }], outputs: [{ id: 'pr', kind: 'data', name: 'Pull Request', dataType: 'context' }] } },
+  { id: 'cron', group: 'flow', type: 'trigger', title: 'Scheduled Job', hint: 'Every day at 4:00 a.m.', body: 'Starts Auto Playtest every day at 4:00 a.m.', pins: { inputs: [], outputs: [{ id: 'exec', kind: 'exec', name: '' }] } },
+  { id: 'task', group: 'data', type: 'task', title: 'Task', hint: 'The work to solve', body: 'The task already exists. Pass it to the implementation step as the work to solve.', pins: { inputs: [{ id: 'task', kind: 'data', name: 'Task', dataType: 'task', multi: true }], outputs: [{ id: 'task', kind: 'data', name: 'Task', dataType: 'task' }] } },
+  { id: 'pull-request-var', group: 'data', type: 'context', title: 'Draft Pull Request', hint: 'The result to review', body: 'The draft pull request with the changes, ready for Human Review.', pins: { inputs: [{ id: 'pr', kind: 'data', name: 'Draft Pull Request', dataType: 'context' }], outputs: [{ id: 'pr', kind: 'data', name: 'Draft Pull Request', dataType: 'context' }] } },
   { id: 'problems-report', group: 'data', type: 'feedback', title: 'Problems Report', hint: 'Shared by every agent', body: 'A shared record. Each agent adds the issues it hit near the end of its work.', pins: { inputs: [{ id: 'add', kind: 'data', name: 'Add issues', dataType: 'feedback', multi: true }], outputs: [{ id: 'report', kind: 'data', name: 'Problems Report', dataType: 'feedback' }] } },
 ];
 const lessonPresetById = Object.fromEntries(lessonPresets.map((preset) => [preset.id, preset]));
@@ -55,62 +64,48 @@ const presets = ShipLoopBlocks.presets;
 const presetById = Object.fromEntries(presets.map((preset) => [preset.id, preset]));
 const lessonSteps = [
   ['Start with an empty board', 'Nothing is on the board yet. A ship loop starts from a task that already exists.', 'A task exists →'],
-  ['A task exists', 'The task is already here. Nothing is solving it yet.', 'Give it to an agent →', () => {
+  ['A task exists', 'The task is already here. Nothing is solving it yet.', 'Give it to a person →', () => {
     place('task', 'task', 40, 48 + NODE_H + NODE_GAP);
   }],
-  ['The task goes to Implement', 'The task goes into Implement’s Context: the information it needs to solve it. Nothing starts it yet.', 'Let a person start it →', () => {
-    place('implement', 'implementation', 40 + NODE_W + NODE_GAP, 48);
+  ['The task goes to Human Implementation', 'Start with a person doing the work. The task goes into Human Implementation’s Context, and the person solves it.', 'Create the pull request →', () => {
+    place('humanimplement', 'implementation', 40 + NODE_W + NODE_GAP, 48);
+    edge('task', 'humanimplement', '', 'variable', 'task', 'context');
+  }],
+  ['The human creates the pull request', 'After Human Implementation finishes and hands over its changes, the requester creates a draft pull request for human review.', 'Keep the draft pull request →', addPullRequest],
+  ['The Draft Pull Request', 'The draft pull request is the result of the work. It carries the changes back to the person who asked for them.', 'Let the same human review it →', addDraftPullRequest],
+  ['The same human reviews', 'The requester reviews the Draft Pull Request with two decisions: Approved or Asked for changes. This independent review does not block the main loop. Every step so far is performed by people.', 'Merge an approved PR →', addHumanReview],
+  ['Approved goes to Merge PR', 'The Approved output leads to Merge PR. The requester merges the accepted changes. We have the simplest successful delivery path, from a task to a merged PR.', 'Comment when changes are requested →', addMergePR],
+  ['Asked for changes goes to a PR comment', 'The Asked for changes output leads to Comment on PR. Specific feedback is recorded on the PR for another attempt. This completes the human-only cycle: implement, create a PR, review, then merge or ask for changes. Next, introduce the first agent.', 'Introduce Agent Implementation →', addCommentPR],
+  ['Introduce Agent Implementation', 'The human-only cycle is complete. Now add Agent Implementation after Human Implementation. The person hands over the work and changes; the agent continues the implementation before the human creates the draft PR.', 'Remove Human Implementation →', addAgentImplementation],
+  ['The agent implements directly', 'Remove Human Implementation as a separate step. The task now goes directly to Agent Implementation. PR creation and Human Review stay with people.', 'Start when a task is created →', () => {
+    removeCard('humanimplement');
     edge('task', 'implement', '', 'variable', 'task', 'context');
   }],
-  ['A person starts the work', 'A person starts Implement with the white control arrow, and the agent solves the task. Someone has to remember to start every run.', 'Start when a task is created →', () => {
-    placeNext('person', 'person', 'implement', 'left');
-    edge('person', 'implement', '', 'execution', 'exec', 'exec');
-  }],
-  ['Task Created starts the work', 'The person no longer starts the run. When a task is created, Task Created starts Implement and hands it the task, so a separate Task is no longer needed. It starts on every task, even one that is too vague to act on.', 'Classify the task first →', () => {
-    placeNext('created', 'task-created', 'person', 'left');
-    removeCard('person');
+  ['Task Created starts the work', 'Task Created replaces the Task variable and starts Agent Implementation automatically. The same human still reviews the PR result. New tasks now start the work without a manual prompt.', 'Run tests before the work →', () => {
+    placeNext('created', 'task-created', 'implement', 'left');
     removeCard('task');
     edge('created', 'implement', '', 'execution', 'exec', 'exec');
     edge('created', 'implement', '', 'variable', 'task', 'context');
+    edge('created', 'humanreview', '', 'variable', 'task', 'context');
   }],
-  ['Classify the task', 'Before any work, the agent classifies the task. A clear task, obvious how to proceed, goes to Implement. Nothing handles an unclear one yet.', 'Hand unclear tasks to a person →', () => {
-    state.edges = state.edges.filter((item) => !(item.from === 'created' && item.to === 'implement' && item.kind === 'execution'));
-    placeNext('classify', 'classify', 'created', 'right');
-    edge('created', 'classify', '', 'execution', 'exec', 'exec');
+  ['Tests run before the work', 'Insert the first Run Auto Tests after Task Created. Passed: continue to Agent Implementation. Nothing handles a broken baseline yet.', 'Handle failed baseline tests →', addBaselineTests],
+  ['Failed baseline tests go to Need Human', 'If the first Run Auto Tests fails, the project is already broken. Its Failed branch goes to Need Human and stops the run so a person can take over. Passing tests continue to Agent Implementation.', 'Add the second test run →', addBaselineFailure],
+  ['Tests run again after the work', 'Insert a second test run between Agent Implementation and Create Draft Pull Request. Passed: the changes become a draft PR. Failed: nothing handles the failure yet.', 'Send test failures back →', addPostImplementationTests],
+  ['Failed tests go back to Agent Implementation', 'When the tests after the work fail, control returns to Agent Implementation for another attempt. It does not know what broke yet.', 'Classify the task →', () => {
+    edge('tests', 'implement', 'Failed', 'execution', 'failed', 'again');
+  }],
+  ['Classify the task', 'After the baseline tests pass, classify the task. A clear task, obvious how to proceed, goes to Agent Implementation. Failed baseline tests already go to Need Human; nothing handles an unclear task yet.', 'Hand problems to a person →', () => {
+    unlink('baseline', 'implement');
+    insertBefore('classify', 'classify', 'implement');
+    edge('baseline', 'classify', 'Passed', 'execution', 'passed', 'exec');
     edge('created', 'classify', '', 'variable', 'task', 'context');
     edge('classify', 'implement', 'Clear', 'execution', 'clear', 'exec');
   }],
-  ['Unclear tasks go to Need Human', 'An unclear task goes to Need Human and the run stops, because work cannot continue without the missing information. Clear tasks are still edited without a known starting point.', 'Run tests before the work →', () => {
-    placeNext('needhuman', 'need-human', 'classify', 'below');
+  ['Unclear tasks also go to Need Human', 'An unclear task now joins the same Need Human action used by failed baseline tests. A person handles missing information or a broken project. Failed tests return to Agent Implementation, but the failure report is not passed back yet.', 'Pass the failure report →', () => {
     edge('classify', 'needhuman', 'Unclear', 'execution', 'unclear', 'exec');
-    edge('created', 'needhuman', '', 'variable', 'task', 'context');
   }],
-  ['Tests run before the work', 'A clear task runs the suite before changing anything. Passed: Implement starts. Failed: the project is already broken, so the task goes to Need Human too. Nothing checks the change itself yet.', 'Run tests after the work →', () => {
-    unlink('classify', 'implement');
-    insertBefore('baseline', 'run-tests', 'implement');
-    edge('classify', 'baseline', 'Clear', 'execution', 'clear', 'exec');
-    edge('baseline', 'implement', 'Passed', 'execution', 'passed', 'exec');
-    edge('baseline', 'needhuman', 'Failed', 'execution', 'failed', 'exec');
-  }],
-  ['Tests run again after the work', 'Implement hands its Changes to a second test run, which judges them. Nothing happens yet when these tests fail.', 'Send failures back →', () => {
-    placeReturning('tests', 'run-tests', 'implement');
-    edge('implement', 'tests', '', 'execution', 'exec', 'exec');
-    edge('implement', 'tests', '', 'variable', 'changes', 'context');
-  }],
-  ['Failed tests go back to Implement', 'When the tests after the work fail, control returns to Implement for another attempt. It does not know what broke yet.', 'Pass the failure report →', () => {
-    edge('tests', 'implement', 'Failed', 'execution', 'failed', 'again');
-  }],
-  ['The failure report joins the Context', 'The failure report goes into Implement’s Context, so the next attempt knows what broke. A passing run still goes nowhere.', 'Open a pull request →', () => {
+  ['The failure report joins the Context', 'The failure report goes into Agent Implementation’s Context, so the next attempt knows what broke. A passing run continues to the draft PR and the same human reviewer. The PR still lacks an explanation of the change.', 'Explain the changes →', () => {
     edge('tests', 'implement', '', 'variable', 'report', 'context');
-  }],
-  ['Passing tests open a pull request', 'When the tests after the work pass, the agent opens a pull request with the changes.', 'Keep the pull request →', () => {
-    placeNext('pr', 'pull-request', 'tests', 'right');
-    edge('tests', 'pr', 'Passed', 'execution', 'passed', 'exec');
-    edge('implement', 'pr', '', 'variable', 'changes', 'context');
-  }],
-  ['The Pull Request', 'The pull request becomes a variable: the result of the run. It says nothing about what changed or how to check it.', 'Explain the changes →', () => {
-    placeNext('prvar', 'pull-request-var', 'pr', 'below');
-    edge('pr', 'prvar', '', 'variable', 'pr', 'pr');
   }],
   ['Explain describes the change', 'Before the pull request opens, Explain reads the original task and the changes. It writes a clear report: what was fixed, how to reproduce the original issue, and how to test the fix. The report goes into the pull request for testers, reviewers, developers, and whoever merges it. Nobody reviews the changes before the tests.', 'Review the changes →', () => {
     unlink('tests', 'pr');
@@ -120,10 +115,10 @@ const lessonSteps = [
     edge('created', 'explainer', '', 'variable', 'task', 'context');
     edge('implement', 'explainer', '', 'variable', 'changes', 'context');
     edge('explainer', 'pr', '', 'variable', 'report', 'context');
-    setCardText('pr', '', 'Open a pull request with the changes and Explain’s report.');
-    setCardText('prvar', '', 'The pull request: the changes plus a report that explains them.');
+    setCardText('pr', '', 'The requester creates a draft pull request with the changes and Explain’s report, or updates the existing draft carried by the task.');
+    setCardText('prvar', '', 'The draft pull request: the changes plus a report that explains them, ready for Human Review.');
   }],
-  ['Code Review', 'Code Review reads the changes before the tests. Approved: they go on to the tests, Explain, and the pull request. Rejected: control and the Changes go back to Implement for another attempt. The changes are still exactly as the writing turn left them.', 'Clean up the changes →', () => {
+  ['Code Review', 'Code Review reads the changes before the tests. Approved: they go on to the tests, Explain, and the pull request. Rejected: control and the Changes go back to Agent Implementation for another attempt. The changes are still exactly as the writing turn left them.', 'Clean up the changes →', () => {
     unlink('implement', 'tests');
     unlink('implement', 'pr');
     unlink('implement', 'explainer');
@@ -137,7 +132,7 @@ const lessonSteps = [
     edge('review', 'implement', 'Rejected', 'execution', 'rejected', 'again');
     edge('review', 'implement', '', 'variable', 'changes', 'context');
   }],
-  ['Clean Up', 'A fresh agent simplifies the changes before Code Review reads them. Nobody collects the problems the agents hit yet.', 'Collect the problems →', () => {
+  ['Clean Up', 'A fresh agent simplifies the changes before Code Review reads them. Human feedback is already recorded on the PR; nothing restarts work on that feedback yet.', 'Restart from the PR comment →', () => {
     unlink('implement', 'review');
     insertBefore('cleanup', 'cleanup', 'review');
     edge('implement', 'cleanup', '', 'execution', 'exec', 'exec');
@@ -145,6 +140,7 @@ const lessonSteps = [
     edge('cleanup', 'review', '', 'execution', 'exec', 'exec');
     edge('cleanup', 'review', '', 'variable', 'changes', 'context');
   }],
+  ['Task Updated restarts from the PR comment', 'Comment on PR now sends its Changes Request and control to Task Updated, next to Task Created. The updated task enters the same baseline tests, classification, and implementation loop to revise the draft. Nobody collects the problems the agents hit yet.', 'Collect the problems →', addTaskUpdated],
   ['Problems go to a shared report', 'Every agent adds the issues it hit to one shared Problems Report. Nobody reads the report yet.', 'Call the Doctor →', () => {
     placeNext('problems', 'problems-report', 'tests', 'below');
     edge('implement', 'problems', '', 'variable', 'problems', 'add');
@@ -153,7 +149,7 @@ const lessonSteps = [
     edge('baseline', 'problems', '', 'variable', 'report', 'add');
     edge('tests', 'problems', '', 'variable', 'report', 'add');
   }],
-  ['The Doctor reads the report', 'When the pull request is open, the Doctor agent reads the Problems Report and writes a new task that addresses what went wrong. Nothing starts that task yet.', 'Use the new task →', () => {
+  ['The Doctor reads the report', 'After creating the draft pull request, the main loop continues directly to the Doctor. It reads the Problems Report and writes a new task without waiting for Human Review. Nothing starts that task yet.', 'Use the new task →', () => {
     placeNext('doctor', 'doctor', 'pr', 'right');
     edge('pr', 'doctor', '', 'execution', 'exec', 'exec');
     edge('problems', 'doctor', '', 'variable', 'report', 'context');
@@ -200,19 +196,23 @@ const lessonSteps = [
     edge('afterplay', 'playtest', '', 'execution', 'exec', 'exec');
     edge('afterplay', 'playtest', '', 'variable', 'report', 'context');
   }],
-  ['Cron starts the playtest', 'Every day at 4:00 a.m., Cron starts Auto Playtest. Human playtests still run whenever people play. Players, designers, QA, playtests, and the Doctor all create tasks, and every task starts the same loop. This is the ship loop.', 'Workshop complete ✓', () => {
+  ['Scheduled Job starts the playtest', 'Every day at 4:00 a.m., Scheduled Job starts Auto Playtest. Human playtests still run whenever people play. Players, designers, QA, playtests, and the Doctor all create tasks. Human Review leads to Merge PR or Comment on PR; posted feedback starts Task Updated. New and updated tasks enter the same loop. This is the ship loop.', 'Workshop complete ✓', () => {
     placeNext('cron', 'cron', 'afterplay', 'left');
     edge('cron', 'afterplay', '', 'execution', 'exec', 'exec');
   }],
 ];
 const LAST_STAGE = lessonSteps.length - 1;
+const BOARD_STORAGE_KEY = 'ship-loop-board-v2';
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
 const GRID = 32;
 const GRID_MAJOR = 160;
 const defaultView = () => ({ x: 48, y: 48, zoom: 1 });
 
-let state = { cards: [], edges: [], stage: 0, view: defaultView() };
+function emptyBoard() {
+  return { cards: [], edges: [], stage: 0, view: defaultView() };
+}
+let state = emptyBoard();
 let history = [];
 let pendingEdge = null;
 let dragMoved = false;
@@ -241,7 +241,7 @@ let autoCamera = true;
 try { autoCamera = localStorage.getItem('ship-loop-auto-camera') !== 'off'; } catch {}
 
 try {
-  const saved = JSON.parse(localStorage.getItem('ship-loop-board-v1'));
+  const saved = JSON.parse(localStorage.getItem(BOARD_STORAGE_KEY));
   if (saved && Array.isArray(saved.cards) && Array.isArray(saved.edges)) {
     const hadView = saved.view && Number.isFinite(saved.view.zoom) && Number.isFinite(saved.view.x) && Number.isFinite(saved.view.y);
     state = saved;
@@ -251,8 +251,8 @@ try {
 
 const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const cssTheme = (type) => `--color:var(--${canonicalType(type)})`;
-const categoryFor = (card) => card.category || types[canonicalType(card.type)]?.category || 'execution';
+const cssTheme = (type) => `--color:var(--${type})`;
+const categoryFor = (card) => card.category || types[card.type]?.category || 'execution';
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const viewport = $('#viewport');
 const board = $('#board');
@@ -273,8 +273,7 @@ function defaultPins(type) {
   };
 }
 function execName(pin) {
-  const name = pin?.name || '';
-  return name === 'Then' ? '' : name;
+  return pin?.name || '';
 }
 function pinColor(pin) {
   if (!pin || pin.kind === 'exec') return 'var(--exec)';
@@ -307,49 +306,17 @@ function addPin(card, dir, pin) {
 function pinLinked(cardId, pinId, dir) {
   return state.edges.some((edge) => (dir === 'out' ? edge.from === cardId && edge.fromPin === pinId : edge.to === cardId && edge.toPin === pinId));
 }
-// Boards saved before the guided example was rebuilt cannot be migrated, so they start fresh.
-function migrateWorkshop() {
-  if (state.workshopV9) return;
-  state.cards = [];
-  state.edges = [];
-  state.stage = 0;
-  state.view = defaultView();
-  state.workshopV9 = true;
-}
 function normalizeState() {
-  migrateWorkshop();
-  const rows = [];
   state.cards.forEach((card, index) => {
     card.type = types[card.type] ? card.type : 'agent';
     card.category = categoryFor(card);
     if (!Number.isFinite(card.x) || !Number.isFinite(card.y)) {
-      const column = Number.isInteger(card.lane) ? card.lane : index % 5;
-      const row = rows[column] || 0;
-      rows[column] = row + 1;
+      const column = index % 5;
+      const row = Math.floor(index / 5);
       card.x = 40 + column * 280;
       card.y = 50 + row * 180;
     }
     ensureCardPins(card);
-  });
-  state.edges.forEach((edge) => {
-    if (edge.kind === 'normal' || edge.kind === 'retry') edge.kind = 'execution';
-    if (edge.kind !== 'variable') edge.kind = 'execution';
-    const fromCard = state.cards.find((card) => card.id === edge.from);
-    const toCard = state.cards.find((card) => card.id === edge.to);
-    if (!fromCard || !toCard) return;
-    const kind = edge.kind === 'variable' ? 'data' : 'exec';
-    if (!edge.fromPin) {
-      let pin = firstPin(fromCard, 'out', kind);
-      if (!pin && kind === 'data') pin = addPin(fromCard, 'out', { id: uid(), kind: 'data', name: edge.label || 'Value', dataType: dataTypes.includes(fromCard.type) ? fromCard.type : 'context' });
-      if (!pin && kind === 'exec') pin = addPin(fromCard, 'out', { id: 'exec', kind: 'exec', name: '' });
-      edge.fromPin = pin?.id;
-    }
-    if (!edge.toPin) {
-      let pin = firstPin(toCard, 'in', kind);
-      if (!pin && kind === 'data') pin = addPin(toCard, 'in', { id: uid(), kind: 'data', name: edge.label || 'Value', dataType: dataTypes.includes(fromCard.type) ? fromCard.type : 'context' });
-      if (!pin && kind === 'exec') pin = addPin(toCard, 'in', { id: 'exec', kind: 'exec', name: '' });
-      edge.toPin = pin?.id;
-    }
   });
   state.stage = Math.max(0, Math.min(LAST_STAGE, Number.isInteger(state.stage) ? state.stage : 0));
   const view = state.view || {};
@@ -363,7 +330,7 @@ normalizeState();
 if (!state.cards.length) pendingFit = false;
 
 function checkpoint() { history.push(JSON.stringify({ cards: state.cards, edges: state.edges, stage: state.stage })); if (history.length > 30) history.shift(); }
-function save() { try { localStorage.setItem('ship-loop-board-v1', JSON.stringify(state)); $('#saved').textContent = 'Saved on this device'; } catch { $('#saved').textContent = 'Storage unavailable · export to save'; } }
+function save() { try { localStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify(state)); $('#saved').textContent = 'Saved on this device'; } catch { $('#saved').textContent = 'Storage unavailable · export to save'; } }
 function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 250); }
 
 function clientToViewport(clientX, clientY) {
@@ -553,13 +520,40 @@ function nodeMarkup(card) {
   const dataCols = dataIn.length || dataOut.length
     ? `<div class="pin-columns"><div class="pin-col pin-col-in">${dataIn.map((pin) => pinSlotMarkup(card, pin, 'in')).join('')}</div><div class="pin-col pin-col-out">${dataOut.map((pin) => pinSlotMarkup(card, pin, 'out')).join('')}</div></div>`
     : '';
-  return `<article class="node card ${source ? 'selected' : ''} ${mark}" tabindex="0" role="button" aria-label="${badge ? `${badge}: ` : ''}Edit ${escape(card.title)}" data-id="${card.id}" data-category="${categoryFor(card)}" style="left:${card.x}px;top:${card.y}px;${appear}${cssTheme(card.type)}">${badge ? `<span class="node-badge">${badge}</span>` : ''}<div class="node-header"><div class="pin-col pin-col-in pin-col-exec">${execIn.map((pin) => pinSlotMarkup(card, pin, 'in')).join('')}</div><div class="node-kind">${type.icon} ${type.label}</div><div class="pin-col pin-col-out pin-col-exec">${execOut.map((pin) => pinSlotMarkup(card, pin, 'out')).join('')}</div></div><h3>${escape(card.title)}</h3><p>${escape(card.body)}</p>${dataCols}</article>`;
+  const mode = card.executionMode === 'independent' ? '<div class="node-mode">Independent review · loop continues</div>' : '';
+  return `<article class="node card ${source ? 'selected' : ''} ${mark}" tabindex="0" role="button" aria-label="${badge ? `${badge}: ` : ''}Edit ${escape(card.title)}" data-id="${card.id}" data-category="${categoryFor(card)}" style="left:${card.x}px;top:${card.y}px;${appear}${cssTheme(card.type)}">${badge ? `<span class="node-badge">${badge}</span>` : ''}<div class="node-header"><div class="pin-col pin-col-in pin-col-exec">${execIn.map((pin) => pinSlotMarkup(card, pin, 'in')).join('')}</div><div class="node-kind">${type.icon} ${type.label}</div><div class="pin-col pin-col-out pin-col-exec">${execOut.map((pin) => pinSlotMarkup(card, pin, 'out')).join('')}</div></div><h3>${escape(card.title)}</h3>${mode}<p>${escape(card.body)}</p>${dataCols}</article>`;
 }
 function ghostMarkup(card) {
   const type = types[card.type] || types.agent;
   return `<article class="node card is-removed" data-ghost="true" aria-hidden="true" style="left:${card.x}px;top:${card.y}px;${cssTheme(card.type)}"><span class="node-badge">Removed</span><div class="node-header"><div class="node-kind">${type.icon} ${type.label}</div></div><h3>${escape(card.title)}</h3><p>${escape(card.body)}</p></article>`;
 }
+// Keep the canvas in place when successive lesson descriptions wrap to different heights.
+let lessonWidth = 0;
+function reserveLessonSpace() {
+  const lesson = $('.lesson');
+  const width = lesson.getBoundingClientRect().width;
+  if (!width || Math.abs(width - lessonWidth) < 0.5) return;
+  lessonWidth = width;
+  const measure = lesson.cloneNode(true);
+  Object.assign(measure.style, { position: 'fixed', visibility: 'hidden', pointerEvents: 'none', width: `${width}px`, height: 'auto', minHeight: '0', left: '0', top: '0' });
+  measure.setAttribute('aria-hidden', 'true');
+  measure.querySelector('#progress').innerHTML = '<div class="progress-segment"></div>';
+  document.body.append(measure);
+  const titleNode = measure.querySelector('#step-title');
+  const descriptionNode = measure.querySelector('#step-description');
+  const nextNode = measure.querySelector('#next');
+  let height = 0;
+  lessonSteps.forEach(([title, description, next]) => {
+    titleNode.textContent = title;
+    descriptionNode.textContent = description;
+    nextNode.textContent = next;
+    height = Math.max(height, measure.getBoundingClientRect().height);
+  });
+  measure.remove();
+  lesson.style.minHeight = `${Math.ceil(height)}px`;
+}
 function render() {
+  reserveLessonSpace();
   save();
   renderPalette();
   $('#nodes').innerHTML = state.cards.map(nodeMarkup).join('') + removedGhosts.map(ghostMarkup).join('');
@@ -783,7 +777,7 @@ function nextPosition() {
   return openSpot(worldX, worldY);
 }
 function variableTypeOptions(selected) {
-  return dataTypes.map((key) => `<option value="${key}" ${key === canonicalDataType(selected) ? 'selected' : ''}>${variableTypes[key].label}</option>`).join('');
+  return dataTypes.map((key) => `<option value="${key}" ${key === selected ? 'selected' : ''}>${variableTypes[key].label}</option>`).join('');
 }
 function pinEditorRow(pin, dir) {
   if (pin.kind === 'exec') return `<div class="pin-edit-row" data-pin-dir="${dir}" data-pin-id="${pin.id}" data-pin-kind="exec"><span class="pin-dot exec"></span><input value="${escape(execName(pin))}" maxlength="40" data-pin-name placeholder="Optional label"><span class="muted">flow</span></div>`;
@@ -858,7 +852,7 @@ function acceptPin(targetCard, source) {
   if (match) return match;
   const named = listPins(targetCard, 'in').find((pin) => pin.kind === 'data' && pin.name === source.pin.name);
   if (named) return named;
-  return addPin(targetCard, 'in', { id: uid(), kind: 'data', name: source.pin.name || 'Value', dataType: canonicalDataType(source.pin.dataType || 'context') });
+  return addPin(targetCard, 'in', { id: uid(), kind: 'data', name: source.pin.name || 'Value', dataType: source.pin.dataType || 'context' });
 }
 function connectPins(source, target) {
   if (!source || !target || source.card.id === target.card.id) return;
@@ -971,7 +965,7 @@ $('#card-form').onsubmit = (event) => {
     pins.outputs.filter((pin) => pin.kind === 'data').forEach((pin) => { if (!pin.name) pin.name = $('#card-title').value.trim(); });
     [...pins.inputs, ...pins.outputs].forEach((pin) => { if (previous && pin.name === previous.title) pin.name = $('#card-title').value.trim(); });
   }
-  const card = { id: id || uid(), title: $('#card-title').value.trim(), body: $('#card-body').value, type, category: $('#card-category').value, x: position.x, y: position.y, pins };
+  const card = { id: id || uid(), title: $('#card-title').value.trim(), body: $('#card-body').value, type, category: $('#card-category').value, ...(previous?.executionMode ? { executionMode: previous.executionMode } : {}), x: position.x, y: position.y, pins };
   if (id) {
     const kept = new Set([...pins.inputs, ...pins.outputs].map((pin) => pin.id));
     state.edges = state.edges.filter((edge) => {
@@ -988,7 +982,7 @@ $('#edge-form').onsubmit = (event) => { event.preventDefault(); checkpoint(); co
 $('#delete-edge').onclick = () => { if (!pendingEdge) return; checkpoint(); state.edges = state.edges.filter((item) => item.id !== pendingEdge.id); $('#edge-editor').close(); render(); };
 $('#undo').onclick = () => { if (!history.length) return; const previous = JSON.parse(history.pop()); state.cards = previous.cards; state.edges = previous.edges; state.stage = previous.stage; linkDrag = null; clearHighlights(); resetStepMarks(); render(); };
 $('#reset').onclick = () => $('#reset-dialog').showModal();
-$('#confirm-reset').onclick = () => { checkpoint(); state = { cards: [], edges: [], stage: 0, view: defaultView(), workshopV9: true }; linkDrag = null; clearHighlights(); resetStepMarks(); $('#reset-dialog').close(); applyView({ animate: true }); render(); };
+$('#confirm-reset').onclick = () => { checkpoint(); state = emptyBoard(); linkDrag = null; clearHighlights(); resetStepMarks(); $('#reset-dialog').close(); applyView({ animate: true }); render(); };
 $('#zoom-in').onclick = () => zoomBy(1.2);
 $('#zoom-out').onclick = () => zoomBy(1 / 1.2);
 $('#zoom-reset').onclick = () => { const center = viewportCenter(); zoomAt(center.x, center.y, 1); };
@@ -1226,7 +1220,7 @@ function pointBeside(anchorId, direction) {
   return { x: rect.x + rect.w + NODE_GAP, y: rect.y };
 }
 function cardFromPreset(preset, id, { x, y }) {
-  return { id, title: preset.title, body: preset.body, type: preset.type, category: types[preset.type].category, x, y, pins: JSON.parse(JSON.stringify(preset.pins)) };
+  return { id, title: preset.title, body: preset.body, type: preset.type, category: types[preset.type].category, x, y, ...(preset.executionMode ? { executionMode: preset.executionMode } : {}), pins: JSON.parse(JSON.stringify(preset.pins)) };
 }
 function place(id, presetId, x, y) {
   const preset = lessonPresetById[presetId];
@@ -1247,6 +1241,67 @@ function placeReturning(id, presetId, anchorId) {
 function placeNext(id, presetId, anchorId, direction) {
   const origin = pointBeside(anchorId, direction);
   place(id, presetId, origin.x, origin.y);
+}
+function addPullRequest() {
+  placeNext('pr', 'pull-request', 'humanimplement', 'right');
+  edge('humanimplement', 'pr', '', 'execution', 'exec', 'exec');
+  edge('humanimplement', 'pr', '', 'variable', 'changes', 'context');
+}
+function addAgentImplementation() {
+  unlink('humanimplement', 'pr');
+  insertBefore('implement', 'agent-implementation', 'pr');
+  edge('humanimplement', 'implement', '', 'execution', 'exec', 'exec');
+  edge('humanimplement', 'implement', '', 'variable', 'changes', 'context');
+  edge('implement', 'pr', '', 'execution', 'exec', 'exec');
+  edge('implement', 'pr', '', 'variable', 'changes', 'context');
+}
+function addBaselineTests() {
+  state.edges = state.edges.filter((item) => !(item.kind === 'execution' && item.from === 'created' && item.to === 'implement'));
+  insertBefore('baseline', 'run-tests', 'implement');
+  edge('created', 'baseline', '', 'execution', 'exec', 'exec');
+  edge('baseline', 'implement', 'Passed', 'execution', 'passed', 'exec');
+}
+function addBaselineFailure() {
+  placeNext('needhuman', 'need-human', 'baseline', 'below');
+  edge('baseline', 'needhuman', 'Failed', 'execution', 'failed', 'exec');
+  edge('created', 'needhuman', '', 'variable', 'task', 'context');
+}
+function addPostImplementationTests() {
+  state.edges = state.edges.filter((item) => !(item.from === 'implement' && item.to === 'pr' && item.kind === 'execution'));
+  placeReturning('tests', 'run-tests', 'implement');
+  edge('implement', 'tests', '', 'execution', 'exec', 'exec');
+  edge('implement', 'tests', '', 'variable', 'changes', 'context');
+  edge('tests', 'pr', 'Passed', 'execution', 'passed', 'exec');
+}
+function addDraftPullRequest() {
+  placeNext('prvar', 'pull-request-var', 'pr', 'below');
+  edge('pr', 'prvar', '', 'variable', 'pr', 'pr');
+}
+function addHumanReview() {
+  placeNext('humanreview', 'human-review', 'prvar', 'right');
+  edge('prvar', 'humanreview', '', 'variable', 'pr', 'pr');
+  edge('task', 'humanreview', '', 'variable', 'task', 'context');
+}
+function addMergePR() {
+  placeNext('mergepr', 'merge-pr', 'humanreview', 'right');
+  edge('humanreview', 'mergepr', 'Approved', 'execution', 'merged', 'exec');
+  edge('prvar', 'mergepr', '', 'variable', 'pr', 'pr');
+}
+function addCommentPR() {
+  placeNext('commentpr', 'comment-pr', 'mergepr', 'below');
+  edge('humanreview', 'commentpr', 'Asked for changes', 'execution', 'changes', 'exec');
+  edge('prvar', 'commentpr', '', 'variable', 'pr', 'pr');
+  edge('humanreview', 'commentpr', '', 'variable', 'task', 'task');
+}
+function addTaskUpdated() {
+  placeNext('updated', 'task-updated', 'created', 'above');
+  edge('commentpr', 'updated', 'PR comment posted', 'execution', 'exec', 'again');
+  edge('commentpr', 'updated', '', 'variable', 'task', 'task');
+  edge('updated', 'baseline', '', 'execution', 'exec', 'exec');
+  ['classify', 'implement', 'needhuman', 'humanreview', 'explainer'].forEach((id) => {
+    edge('updated', id, '', 'variable', 'task', 'context');
+  });
+  setCardText('pr', '', 'The requester creates a draft pull request with the changes, or updates the existing draft carried by the task.');
 }
 function flowLayout() {
   const byId = new Map(state.cards.map((card) => [card.id, card]));
@@ -1312,6 +1367,17 @@ function resetStepMarks() {
     $('#connection-hint').textContent = 'Drag ▷ for control flow · Drag ● to pass a variable';
   }
 }
+// A new step can arrive before a slide ends; resume from its painted position.
+function visibleCardPosition(card) {
+  const node = document.querySelector(`.node[data-id="${CSS.escape(card.id)}"]`);
+  if (!node || !state.view) return { x: card.x, y: card.y };
+  const rect = node.getBoundingClientRect();
+  const base = viewport.getBoundingClientRect();
+  return {
+    x: (rect.left - base.left - (viewport.clientLeft || 0) - state.view.x) / state.view.zoom,
+    y: (rect.top - base.top - (viewport.clientTop || 0) - state.view.y) / state.view.zoom,
+  };
+}
 function publishStepChange(before) {
   const beforeIds = new Set(before.cards.map((card) => card.id));
   const afterIds = new Set(state.cards.map((card) => card.id));
@@ -1320,7 +1386,7 @@ function publishStepChange(before) {
   const changed = state.cards.filter((card) => {
     if (!beforeIds.has(card.id)) return false;
     const previous = before.cards.find((item) => item.id === card.id);
-    return previous.x !== card.x || previous.y !== card.y || previous.title !== card.title || previous.body !== card.body || edgeTouch(before.edges, card.id) !== edgeTouch(state.edges, card.id);
+    return previous.x !== card.x || previous.y !== card.y || previous.type !== card.type || previous.title !== card.title || previous.body !== card.body || edgeTouch(before.edges, card.id) !== edgeTouch(state.edges, card.id);
   }).map((card) => card.id);
   const unchanged = state.cards.length - added.length - changed.length;
   const previousKeys = new Set(before.edges.map(edgeStructuralKey));
@@ -1331,13 +1397,17 @@ function publishStepChange(before) {
   if (!reduced) {
     state.cards.forEach((card) => {
       const previous = before.cards.find((item) => item.id === card.id);
-      if (previous && (previous.x !== card.x || previous.y !== card.y)) movedFrom.set(card.id, { dx: previous.x - card.x, dy: previous.y - card.y });
+      if (!previous) return;
+      const position = previous.visiblePosition || previous;
+      const dx = position.x - card.x;
+      const dy = position.y - card.y;
+      if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) movedFrom.set(card.id, { dx, dy });
     });
   }
   moveStart = performance.now();
   phaseDelay = movedFrom.size ? MOVE_MS : 0;
   edgeDrawStart = moveStart + phaseDelay;
-  removedGhosts = removed;
+  removedGhosts = removed.map((card) => ({ ...card, ...(card.visiblePosition || {}) }));
   const part = (count, label) => `<span class="delta delta-${label}">${count} ${label}</span>`;
   stepNote = `${part(added.length, 'added')} ${part(changed.length, 'changed')} ${part(removed.length, 'removed')} ${part(unchanged, 'unchanged')}`;
   pendingPan = true;
@@ -1357,7 +1427,7 @@ $('#next').onclick = () => {
   checkpoint();
   reservedRects = [];
   const before = {
-    cards: state.cards.map((card) => ({ id: card.id, title: card.title, body: card.body, type: card.type, category: card.category, x: card.x, y: card.y })),
+    cards: state.cards.map((card) => ({ id: card.id, title: card.title, body: card.body, type: card.type, category: card.category, x: card.x, y: card.y, visiblePosition: visibleCardPosition(card) })),
     edges: state.edges.map((item) => ({ from: item.from, to: item.to, fromPin: item.fromPin, toPin: item.toPin, kind: item.kind, label: item.label || '' })),
   };
   state.stage += 1;
@@ -1365,9 +1435,8 @@ $('#next').onclick = () => {
   flowLayout();
   publishStepChange(before);
 };
-
 $('#export').onclick = () => ShipLoopExportUI.open(state);
-new ResizeObserver(() => { paintView(); drawEdges(); }).observe(viewport);
+new ResizeObserver(() => { reserveLessonSpace(); paintView(); drawEdges(); }).observe(viewport);
 window.addEventListener('resize', () => { paintView(); drawEdges(); });
 applyView({ animate: false });
 render();

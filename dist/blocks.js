@@ -21,8 +21,8 @@
     {
       id: 'agent-task', group: 'flow', type: 'agent', title: 'Agent',
       hint: 'Create, analyze, review, or improve',
-      body: 'Perform the defined task using the supplied context and any feedback from an earlier attempt. This may produce a design, analysis, review, content, response, configuration, or other product change. Stay within the assigned scope and permissions. Select Done with a versioned result and work evidence, Clarify with a missing decision, or Failed with a diagnostic. Done means this step finished; it does not imply acceptance or delivery.',
-      pins: { inputs: [enter(), exec('again', 'Retry'), task(), context()], outputs: [exec('done', 'Done'), exec('clarify', 'Clarify'), exec('failed', 'Failed'), data('result', 'Result')] },
+      body: 'Perform the defined task using the supplied context and any feedback from an earlier attempt. This may produce a design, analysis, review, content, response, configuration, or other product change. Stay within the assigned scope and permissions. Select Done with a versioned result and work evidence, Clarify with a missing decision, or Failed with a diagnostic. Report any issues encountered through Problems. Done means this step finished; it does not imply acceptance or delivery.',
+      pins: { inputs: [enter(), exec('again', 'Retry'), task(), context()], outputs: [exec('done', 'Done'), exec('clarify', 'Clarify'), exec('failed', 'Failed'), data('result', 'Result'), data('problems', 'Problems', 'feedback')] },
     },
     {
       id: 'human', group: 'flow', type: 'human', title: 'Human',

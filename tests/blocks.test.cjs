@@ -66,6 +66,14 @@ test('published catalog is identical and works as a dependency-free browser scri
   assert.deepEqual(JSON.parse(JSON.stringify(browser.ShipLoopBlocks)), { presets });
 });
 
+test('the reusable Agent exposes Problems as feedback alongside its result and decisions', () => {
+  const agent = byId['agent-task'];
+  assert.deepEqual(agent.pins.outputs.find((pin) => pin.id === 'problems'), {
+    id: 'problems', kind: 'data', name: 'Problems', dataType: 'feedback',
+  });
+  assert.match(agent.body, /Report any issues encountered through Problems/);
+});
+
 test('every catalog contract survives all export formats without changing the board', () => {
   const state = board(presets.map((preset, index) => node(preset.id, preset.id, { x: index * 30, y: index ? index * -15 : 0 })));
   const original = structuredClone(state);

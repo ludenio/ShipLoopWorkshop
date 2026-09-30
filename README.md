@@ -19,6 +19,10 @@ The left column is a shared library for company and scenario templates; collapse
 
 For example, a content team can connect trigger → draft → review, sending review feedback back to the draft for another attempt. These are starting points: each team supplies its own criteria, tools, and ownership.
 
+The Agent block exposes **Problems** as feedback alongside its Result. The walkthrough starts with a complete human cycle: implement, create a draft PR, review, and either **Merge PR** or **Comment on PR**. It then replaces Human Implementation with Agent Implementation and adds task triggers and checks. Each test run is revealed with its failure branch before classification is introduced. Execution runs baseline tests before classification and the second tests after implementation.
+
+**Human Review** runs independently while the main loop continues to the Doctor. Later, **Task Updated** sits beside **Task Created** and uses the PR comment’s **Changes Request** to restart the loop.
+
 Pull requests, commits, and other software-delivery steps belong to the guided walkthrough, which has its own presets. Adding a block describes an operation; execution happens in the implementation built from the exported diagram. Variables describe values rather than creating storage.
 
 ## Export your loop
@@ -33,7 +37,7 @@ Preview and copy the text, or download the export. The export describes the curr
 
 ## Development checks
 
-No build step or browser dependencies are required. With Node.js and Python 3 installed, run `node --test tests/*.test.cjs` to check export fidelity, the generated controller, and ZIP downloads. Keep the website files in `docs/` and `dist/` synchronized; GitHub Pages serves `docs/`.
+No build step or browser dependencies are required. With Node.js and Python 3 installed, run `node --test tests/*.test.cjs` to check the walkthrough, saved boards, camera continuity, exports, generated controller, and ZIP downloads. Keep the website files in `docs/` and `dist/` synchronized; GitHub Pages serves `docs/`.
 
 ## Other workshops
 

@@ -13,7 +13,7 @@ const card = (id, { type = 'agent', inputs = [], outputs = [], body = 'Work on '
   category: type === 'context' ? 'data' : 'execution', pins: { inputs, outputs },
 });
 const edge = (id, from, fromPin, to, toPin, kind = 'execution') => ({ id, from, fromPin, to, toPin, kind, label: 'Condition ' + id });
-const graph = (cards = [], edges = []) => ({ cards, edges, stage: 5, view: { x: -100, y: 22, zoom: 0.8 }, workshopV8: true });
+const graph = (cards = [], edges = []) => ({ cards, edges, stage: 5, view: { x: -100, y: 22, zoom: 0.8 } });
 const completed = { outputPin: null, outputs: {}, outcome: 'completed' };
 const python = process.env.PYTHON || 'python3';
 
